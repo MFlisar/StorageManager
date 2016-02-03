@@ -1,18 +1,22 @@
 package com.michaelflisar.storagemanager.folders;
 
+import com.michaelflisar.storagemanager.StorageDefinitions;
 import com.michaelflisar.storagemanager.data.FileFolderData;
 import com.michaelflisar.storagemanager.data.MediaStoreFolderData;
+import com.michaelflisar.storagemanager.interfaces.IFile;
 import com.michaelflisar.storagemanager.interfaces.IFolder;
 
 import java.io.File;
+import java.util.ArrayList;
+import java.util.List;
 
 /**
  * Created by flisar on 03.02.2016.
  */
-public class FileFolder implements IFolder
+public class FileFolder extends BaseFolder
 {
-    // File
-    protected File file;
+    // File + Content
+    protected File folder;
 
     // MediaStore
     protected MediaStoreFolderData mediaStoreFolderData;
@@ -22,31 +26,42 @@ public class FileFolder implements IFolder
 
     public FileFolder(String path)
     {
-        this.file = new File(path);
-        mediaStoreFolderData = null;
-        fileFolderData = null;
+        this(new File(path));
     }
 
     public FileFolder(File file)
     {
-        this.file = file;
+        folder = file;
         mediaStoreFolderData = null;
         fileFolderData = null;
+        status = StorageDefinitions.FolderStatus.NotLoaded;
+        files = new ArrayList<>();
     }
 
     // --------------------------------
     // Properties
     // --------------------------------
 
-    public File getFile()
+    public File getFolder()
     {
-        return file;
+        return folder;
     }
 
     @Override
     public String getName()
     {
-        return file.getName();
+        return folder.getName();
+    }
+
+    @Override
+    public Integer getCount()
+    {
+        if (status == StorageDefinitions.FolderStatus.Loaded)
+            return files.size();
+
+        if (mediaStoreFolderData != null)
+            return mediaStoreFolderData.getCount();
+        return null;
     }
 
     // --------------------------------

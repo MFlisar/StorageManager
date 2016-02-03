@@ -101,7 +101,7 @@ public class MediaStoreUtil
 
         String dateTakenColumn = projection[3];
 
-        // only get file with highest date
+        // only get folder with highest date
         String groupBy = "1) GROUP BY 1,(2";
         String orderBy = "MAX(" + dateTakenColumn + ") DESC";
 
@@ -234,7 +234,7 @@ public class MediaStoreUtil
             }
             else
             {
-                // handle other data types as audio/file
+                // handle other data types as audio/folder
             }
         }
 

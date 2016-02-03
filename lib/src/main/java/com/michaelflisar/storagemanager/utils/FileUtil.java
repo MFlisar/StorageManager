@@ -126,7 +126,7 @@ public class FileUtil
         if (files == null || files.length == 0)
             return false;
 
-        // 1) prüfen ob der Ordner ein .nomedia file enthält
+        // 1) prüfen ob der Ordner ein .nomedia folder enthält
         File fNoMedia = new File(folder, ".nomedia");
         if (!Arrays.asList(files).contains(fNoMedia))
             return false;

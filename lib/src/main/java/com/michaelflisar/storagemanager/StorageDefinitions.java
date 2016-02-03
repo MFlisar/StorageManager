@@ -15,6 +15,12 @@ public class StorageDefinitions
         Video
     }
 
+    public enum FolderStatus
+    {
+        NotLoaded,
+        Loaded
+    }
+
     public static final ArrayList<String> IMG_FORMATS = new ArrayList<String>()
     {
         {

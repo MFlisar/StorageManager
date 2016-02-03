@@ -40,12 +40,12 @@ public class StorageUtil
             for (int i = 0; i < typesToGet.size(); i++)
                 folders.addAll(MediaStoreUtil.getAllFoldersWithoutContent(context, typesToGet.get(i), true));
 
-            // security check => sometimes the media store is behind, so we check manually for .nomedia file if necessary
+            // security check => sometimes the media store is behind, so we check manually for .nomedia folder if necessary
             if (visible != null && visible)
             {
                 for (int i = folders.size() - 1; i >= 0; i--)
                 {
-                    if (FileUtil.hasNoMediaFileRecursive(((FileFolder) folders.get(i)).getFile()))
+                    if (FileUtil.hasNoMediaFileRecursive(((FileFolder) folders.get(i)).getFolder()))
                         folders.remove(i);
                 }
             }

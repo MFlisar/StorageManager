@@ -68,7 +68,7 @@ public class StorageFile implements IFile
     {
         boolean success = false;
 
-        // 1) try to delete via media store => this will delete the file from the storage as well
+        // 1) try to delete via media store => this will delete the folder from the storage as well
         if (mediaStoreFileData != null)
             success = MediaStoreUtil.delete(context, mediaStoreFileData);
 
@@ -76,7 +76,7 @@ public class StorageFile implements IFile
         if (!success)
         {
             success = file.delete();
-            // check if entry in media store exists and delete it if possible => we don't check for success as we already know if the real file was deleted
+            // check if entry in media store exists and delete it if possible => we don't check for success as we already know if the real folder was deleted
             MediaStoreUtil.delete(context, file, null);
         }
 
