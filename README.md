@@ -44,3 +44,5 @@ This library addresses local files only, although `SAF` does offer access to onl
 #### 1.2 Additional setup
 
 ### 2. Usage
+
+There's a demo project that shows all the functions available *with comments* and everything is in one file! Read it to find out how this library works.
