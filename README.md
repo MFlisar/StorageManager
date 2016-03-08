@@ -22,11 +22,13 @@ This library addresses local files only, although `SAF` does offer access to onl
  * allows to create `IFile` from any path, the library will take care to create the correct `IFile` (depending on the location of the path you'll get a `StorageFile` or a `StorageDocument`)
  * allows to **copy**, **delete** and **move**  files, either on primary or secondary storage
  * allows to efficiently make **batch copies**, **batch deletes**, **batch moves** => `MediaStore` updates will be called in batch operations
+ * smartly selects best method for file modifications to keep as much data as possible (i.e. you can't set the `lastModified` date for a `DocumentFile`)
 * MediaStore
  * manages `MediaStore` automatically
  * offers `MediaStoreFileData` and `MediaStoreFolderData` class that holds the data from the `MediaStore` and that can be loaded with the folders/files (if you need this data)
+ * updates the `MediaStore`effeciently
 * Folder
- * **list folders** on primary and secondary storage efficiently => load folders with/-out content and with/-out `MediaStore` data 
+ * **list folders** on primary and secondary storage efficiently => loads folders with/-out content and with/-out `MediaStore` data 
  * **load files in folder** => load them with-/out `MediaStore`data
 * Primary/Secondary storage (internal, sd card) 
  * offers functions to get internal storage path and sd card path
