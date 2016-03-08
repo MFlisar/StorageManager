@@ -18,7 +18,8 @@ This library addresses local files only, although `SAF` does offer access to onl
 * Permissions
  * handle permissions for secondary storages - this library offers you the functions to gain, persist and check permissions that may be necessary for reading and modifying files
 * Files
- * offers wrapper class `IFile` that wraps a `File` or `DocumentFile` and offers all the necessary functions to read or manipulate those wrapped files
+ * offers wrapper class `IFile` that wraps a `File` (wrapped in `StorageFile`) or `DocumentFile` (wrapped in `StorageDocument`) and offers all the necessary functions to read or manipulate those wrapped files
+ * allows to create `IFile` from any path, the library will take care to create the correct `IFile` (depending on the location of the path you'll get a `StorageFile` or a `StorageDocument`)
  * allows to **copy**, **delete** and **move**  files, either on primary or secondary storage
  * allows to efficiently make **batch copies**, **batch deletes**, **batch moves** => `MediaStore` updates will be called in batch operations
 * MediaStore
