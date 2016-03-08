@@ -15,6 +15,8 @@ This library addresses local files only, although `SAF` does offer access to onl
 
 ## Overview - Main functions of this library
 
+* General
+ * this library handles `Files` on the primary storage and `DocumentFile` on local secondary storages
 * Permissions
  * handle permissions for secondary storages - this library offers you the functions to gain, persist and check permissions that may be necessary for reading and modifying files
 * Files
@@ -32,6 +34,12 @@ This library addresses local files only, although `SAF` does offer access to onl
  * **load files in folder** => load them with-/out `MediaStore`data
 * Primary/Secondary storage (internal, sd card) 
  * offers functions to get internal storage path and sd card path
+
+## Missing
+
+* support for USB sticks
+* handling of adding/removing storages
+* retrieving permissions on demand instead of manually
 
 **TODO**
 
