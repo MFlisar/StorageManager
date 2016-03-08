@@ -35,7 +35,7 @@ This library addresses local files only, although `SAF` does offer access to onl
 * Primary/Secondary storage (internal, sd card) 
  * offers functions to get internal storage path and sd card path
 
-## Missing
+#### Missing functions
 
 * support for USB sticks
 * handling of adding/removing storages
