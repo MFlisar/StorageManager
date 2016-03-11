@@ -1,8 +1,11 @@
 package com.michaelflisar.storagemanager.data;
 
+import android.location.Location;
 import android.net.Uri;
 
 import com.michaelflisar.storagemanager.StorageDefinitions;
+import com.michaelflisar.storagemanager.utils.ExifFileUtil;
+import com.michaelflisar.storagemanager.utils.MediaStoreUtil;
 
 /**
  * Created by flisar on 03.02.2016.
@@ -21,13 +24,14 @@ public class MediaStoreFileData
     private String mMimeType;
     private int mWidth;
     private int mHeight;
-    private double mLatitude;
-    private double mLongitude;
+    private Double mLatitude;
+    private Double mLongitude;
     private int mOrientation;
 
-    public MediaStoreFileData(StorageDefinitions.MediaType type, Uri uri, long id, String name, String data, long dateTaken, long dateModified, String mimeType, int width, int height, double latitude, double longitude, int orientation)
+    public MediaStoreFileData(StorageDefinitions.MediaType type, Uri uri, long id, String name, String data, long dateTaken, long dateModified, String mimeType, int width, int height, Double latitude, Double longitude, int orientation)
     {
         mType = type;
+        mUri = uri;
         mId = id;
         mName = name;
         mData = data;
@@ -39,6 +43,23 @@ public class MediaStoreFileData
         mLatitude = latitude;
         mLongitude = longitude;
         mOrientation = orientation;
+    }
+
+    public MediaStoreFileData(MediaStoreFileData source)
+    {
+        mType = source.mType;
+        mUri = source.mUri;
+        mId = source.mId;
+        mName = source.mName;
+        mData = source.mData;
+        mDateTaken = source.mDateTaken;
+        mDateModified = source.mDateModified;
+        mMimeType = source.mMimeType;
+        mWidth = source.mWidth;
+        mHeight = source.mHeight;
+        mLatitude = source.mLatitude;
+        mLongitude = source.mLongitude;
+        mOrientation = source.mOrientation;
     }
 
     // --------------------------------
@@ -95,12 +116,12 @@ public class MediaStoreFileData
         return mHeight;
     }
 
-    public double getLatitude()
+    public Double getLatitude()
     {
         return mLatitude;
     }
 
-    public double getLongitude()
+    public Double getLongitude()
     {
         return mLongitude;
     }
@@ -109,4 +130,42 @@ public class MediaStoreFileData
     {
         return mOrientation;
     }
+
+    public int getRotation()
+    {
+        return ExifFileUtil.convertExifOrientationToDegrees(mOrientation);
+    }
+
+    public Location getLocation()
+    {
+        if (mLatitude == null || mLongitude == null)
+            return null;
+
+        Location location = new Location("");
+        location.setLatitude(mLatitude);
+        location.setLongitude(mLongitude);
+        return location;
+    }
+
+    // --------------------------------
+    // Setter (Updater)
+    // --------------------------------
+
+    public void updateRotation(int degrees)
+    {
+        mOrientation = ExifFileUtil.convertNormalisedDegreesToExif(degrees);
+    }
+
+    public void updateName(String path, String name)
+    {
+        mData = path;
+        mName = name;
+    }
+
+    public void updateSize(int w, int h)
+    {
+        mWidth = w;
+        mHeight = h;
+    }
+
 }

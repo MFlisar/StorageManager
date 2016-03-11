@@ -2,6 +2,8 @@ package com.michaelflisar.storagemanager.utils;
 
 import android.webkit.MimeTypeMap;
 
+import com.michaelflisar.storagemanager.StorageDefinitions;
+
 import java.io.File;
 
 /**
@@ -11,8 +13,13 @@ public class ExtensionUtil
 {
     public static String getMimeType(File file)
     {
+        return getMimeType(file.getAbsolutePath());
+    }
+
+    public static String getMimeType(String path)
+    {
         String type = null;
-        String extension = getExtension(file);
+        String extension = getExtension(path).toLowerCase();
         if (extension != null)
             type = MimeTypeMap.getSingleton().getMimeTypeFromExtension(extension);
         return type;
@@ -33,5 +40,28 @@ public class ExtensionUtil
         } catch (Exception e) {
             return "";
         }
+    }
+
+    public static StorageDefinitions.MediaType getMediaType(File file)
+    {
+        return getMediaType(file.getAbsolutePath());
+    }
+
+    public static StorageDefinitions.MediaType getMediaType(String path)
+    {
+        String mimeType = getMimeType(path);
+        return getMediaTypeFromMimeType(mimeType);
+    }
+
+    private static StorageDefinitions.MediaType getMediaTypeFromMimeType(String mimeType)
+    {
+        if (mimeType != null)
+        {
+            if (mimeType.contains("image"))
+                return StorageDefinitions.MediaType.Image;
+            else if (mimeType.contains("video"))
+                return StorageDefinitions.MediaType.Video;
+        }
+        return null;
     }
 }

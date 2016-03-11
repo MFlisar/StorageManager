@@ -1,9 +1,11 @@
 package com.michaelflisar.storagemanager.data;
 
+import com.michaelflisar.storagemanager.interfaces.IFolderData;
+
 /**
  * Created by flisar on 03.02.2016.
  */
-public class DocumentFolderData
+public class DocumentFolderData implements IFolderData
 {
     private int mCount;
 
@@ -16,6 +18,7 @@ public class DocumentFolderData
     // Getter
     // --------------------------------
 
+    @Override
     public int getCount()
     {
         return mCount;
