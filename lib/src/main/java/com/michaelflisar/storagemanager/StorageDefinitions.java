@@ -9,8 +9,10 @@ import java.util.ArrayList;
  */
 public class StorageDefinitions
 {
-    public static final String AUTHORITY = "content://com.android.externalstorage.documents/tree";
+    public static final String AUTHORITY_MAIN = "content://com.android.externalstorage.documents";
+    public static final String AUTHORITY_TREE = "content://com.android.externalstorage.documents/tree";
     public static final String AUTHORITY_COLON = "%3A";
+    public static final String AUTHORITY_SLASH= "%2F";
 
     public enum MediaType
     {

@@ -5,5 +5,7 @@ package com.michaelflisar.storagemanager.interfaces;
  */
 public interface IFolderData
 {
+    boolean knowsCount();
     int getCount();
+    IFile getMainFile();
 }

@@ -1,5 +1,7 @@
 package com.michaelflisar.storagemanager.folders;
 
+import android.util.Log;
+
 import com.michaelflisar.storagemanager.StorageDefinitions;
 import com.michaelflisar.storagemanager.StorageUtil;
 import com.michaelflisar.storagemanager.data.FileFolderData;
@@ -37,30 +39,40 @@ public class FileFolder extends BaseFolder<File>
 
     public FileFolder(File file)
     {
-        this(new StorageFile(file, null));
+        this(new StorageFile(file, null, null));
     }
 
     @Override
-    public List<IFile<File>> loadFilesInternally(boolean loadFromMediaStore, StorageDefinitions.FileSortingType limitSortingType, StorageDefinitions.FileSortingOrder limitSortingOrder, Integer limit)
+    public List<IFile<File>> loadFilesInternally(boolean loadFromMediaStore, StorageDefinitions.FileSortingType limitSortingType, StorageDefinitions.FileSortingOrder limitSortingOrder, Integer limit, Long minDate, Long maxDate, MediaStoreUtil.DateType dateType)
     {
         List<IFile<File>> files = new ArrayList<>();
 
+        boolean isHidden = StorageUtil.hasNoMediaFile(getFolder().getParent(), true);
         if (loadFromMediaStore)
         {
-            List<MediaStoreFileData> folderFiles = MediaStoreUtil.loadFilesInFolder(mediaStoreFolderData.getBucketId(), fileTypesToList, limitSortingType, limitSortingOrder, limit);
-            for (int i = 0; i < folderFiles.size(); i++)
+            if (mediaStoreFolderData != null)
             {
-                StorageFile file = (StorageFile) StorageUtil.getFileByPath(folderFiles.get(i).getData());
-                file.setMediaStoreFileData(folderFiles.get(i));
-                files.add(file);
+                List<MediaStoreFileData> folderFiles = MediaStoreUtil.loadFilesInFolder(mediaStoreFolderData.getBucketId(), fileTypesToList, limitSortingType, limitSortingOrder, limit, minDate, maxDate, dateType);
+                for (int i = 0; i < folderFiles.size(); i++)
+                {
+                    StorageFile file = (StorageFile) StorageUtil.getFileByPath(folderFiles.get(i).getData(), isHidden);
+                    // check if file exists,
+                    // maybe there is an relict in the media store, not all apps correctly update it
+                    if (file != null)
+                    {
+                        file.setMediaStoreFileData(folderFiles.get(i));
+                        files.add(file);
+                    }
+                }
             }
         }
         else
         {
             // TODO: use sorting and order? then you would have to load all files even if limit is set!
-            List<File> folderFiles = FileUtil.getFolderFiles(folder.getWrapped(), fileTypesToList, limit);
+            // TODO: minCreationDate not yet supported!
+            List<File> folderFiles = FileUtil.getFolderFiles(folder.getWrapped(), fileTypesToList, limit, minDate, maxDate, dateType);
             for (int i = 0; i < folderFiles.size(); i++)
-                files.add(new StorageFile(folderFiles.get(i), null)); // MediaStoreData is set to null, not using media store does only make sense when loading data in a hidden folder!
+                files.add(new StorageFile(folderFiles.get(i), isHidden, null)); // MediaStoreData is set to null, not using media store does only make sense when loading data in a hidden folder!
         }
 
         return files;
@@ -88,7 +100,7 @@ public class FileFolder extends BaseFolder<File>
         if (status == StorageDefinitions.FolderStatus.Loaded)
             return files.size();
 
-        if (fileFolderData != null)
+        if (fileFolderData != null && fileFolderData.knowsCount())
             return fileFolderData.getCount();
 
         if (mediaStoreFolderData != null)

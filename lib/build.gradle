@@ -1,15 +1,14 @@
 apply plugin: 'com.android.library'
 
 android {
-    compileSdkVersion 23
-    buildToolsVersion "23.0.2"
+    compileSdkVersion setup.compileSdk
+    buildToolsVersion setup.buildTools
 
     defaultConfig {
-        minSdkVersion 14
-        targetSdkVersion 23
-        versionCode 1
-        versionName "1.0"
+        minSdkVersion setup.minSdk
+        targetSdkVersion setup.targetSdk
     }
+
     buildTypes {
         release {
             minifyEnabled false
@@ -20,5 +19,6 @@ android {
 }
 
 dependencies {
-    compile 'com.android.support:support-v4:23.1.1'
+//    compile 'com.android.support:support-v4:24.2.0'
+    compile "com.android.support:support-core-utils:$rootProject.versions.supportLib"
 }

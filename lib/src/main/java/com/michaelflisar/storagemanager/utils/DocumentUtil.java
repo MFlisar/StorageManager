@@ -2,8 +2,10 @@ package com.michaelflisar.storagemanager.utils;
 
 import android.content.Context;
 import android.database.Cursor;
+import android.net.Uri;
 import android.provider.DocumentsContract;
 import android.support.v4.provider.DocumentFile;
+import android.util.Log;
 
 import com.michaelflisar.storagemanager.StorageDefinitions;
 import com.michaelflisar.storagemanager.StorageManager;
@@ -14,6 +16,7 @@ import com.michaelflisar.storagemanager.interfaces.IFile;
 import com.michaelflisar.storagemanager.interfaces.IFolder;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 
 /**
@@ -21,59 +24,76 @@ import java.util.List;
  */
 public class DocumentUtil
 {
-    public static List<IFolder> getAllFoldersWithoutContent(DocumentFile root, List<StorageDefinitions.MediaType> type, Boolean visible)
-    {
-        List<IFolder> folders = new ArrayList<>();
-        checkFolderForMedia(type, folders, root, visible);
-        return folders;
-    }
+    private static final String TAG = DocumentUtil.class.getSimpleName();
 
-    private static void checkFolderForMedia(List<StorageDefinitions.MediaType> type, List<IFolder> folders, DocumentFile folder, Boolean visible)
-    {
-        if (!folder.isDirectory())
-            return;
+//    public static List<IFolder> getAllFoldersWithoutContent(DocumentFile root, List<StorageDefinitions.MediaType> type, Boolean visible)
+//    {
+//        List<IFolder> folders = new ArrayList<>();
+//        checkFolderForMedia(type, folders, root, visible);
+//        return folders;
+//    }
+//
+//    private static void checkFolderForMedia(List<StorageDefinitions.MediaType> type, List<IFolder> folders, DocumentFile folder, Boolean visible)
+//    {
+//        if (!folder.isDirectory())
+//            return;
+//
+//        DocumentFile[] files = folder.listFiles();
+//
+//        // 1) recall this function recursively for all sub folders
+//        for (int i = 0; i < files.length; i++)
+//            checkFolderForMedia(type, folders, files[i], visible);
+//
+//        // 2) check if folder is hidden/visible if necessary
+//        if (visible != null)
+//        {
+//            String noMediaFile = ".nomedia";
+//            boolean hasNoMediaFile = false;
+//            for (int i = 0; i < files.length; i++)
+//            {
+//                if (files[i].getName().equals(noMediaFile))
+//                {
+//                    hasNoMediaFile = true;
+//                    break;
+//                }
+//            }
+//            if ((visible && hasNoMediaFile) || (!visible && !hasNoMediaFile))
+//                return;
+//        }
+//
+//        // 3) count relevant files in folder
+//        int count = 0;
+//        List<DocumentFile> filesInFolder = getFolderFiles(folder, type, null);
+//        count = filesInFolder.size();
+//
+//        DocumentFolder f = new DocumentFolder(new StorageDocument(folder, null));
+//        f.setDocumentFolderData(new DocumentFolderData(count));
+//        folders.add(f);
+//    }
 
-        DocumentFile[] files = folder.listFiles();
-
-        // 1) recall this function recursively for all sub folders
-        for (int i = 0; i < files.length; i++)
-            checkFolderForMedia(type, folders, files[i], visible);
-
-        // 2) check if folder is hidden/visible if necessary
-        if (visible != null)
-        {
-            String noMediaFile = ".nomedia";
-            boolean hasNoMediaFile = false;
-            for (int i = 0; i < files.length; i++)
-            {
-                if (files[i].getName().equals(noMediaFile))
-                {
-                    hasNoMediaFile = true;
-                    break;
-                }
-            }
-            if ((visible && hasNoMediaFile) || (!visible && !hasNoMediaFile))
-                return;
-        }
-
-        // 3) count relevant files in folder
-        int count = 0;
-        List<DocumentFile> filesInFolder = getFolderFiles(folder, type, null);
-        count = filesInFolder.size();
-
-        DocumentFolder f = new DocumentFolder(new StorageDocument(folder, null));
-        f.setDocumentFolderData(new DocumentFolderData(count));
-        folders.add(f);
-    }
-
-    public static List<DocumentFile> getFolderFiles(DocumentFile folder, List<StorageDefinitions.MediaType> type, Integer limit)
+    public static List<DocumentFile> getFolderFiles(DocumentFile folder, List<StorageDefinitions.MediaType> type, Integer limit, Long minDate, Long maxDate, MediaStoreUtil.DateType dateType)
     {
         List<DocumentFile> files = new ArrayList<>();
+        Long date;
+        boolean isValid;
         if (type == null)
         {
             for (DocumentFile f : folder.listFiles())
             {
-                files.add(f);
+                if (dateType != null)
+                {
+                    if (dateType == MediaStoreUtil.DateType.Created || dateType == MediaStoreUtil.DateType.Added)
+                        isValid = true; // we can't check this!
+                    else
+                    {
+                        date = f.lastModified();
+                        isValid = date >= minDate && date <= maxDate;
+                    }
+                    if (isValid)
+                        files.add(f);
+                }
+                else
+                    files.add(f);
                 if (limit != null && files.size() == limit)
                     break;
             }
@@ -97,13 +117,24 @@ public class DocumentUtil
 
                 for (DocumentFile f : folder.listFiles())
                 {
-                    boolean isValid = false;
+                    isValid = false;
                     for (int j = 0; j < validFormats.size(); j++)
                     {
                         if (f.getName().toLowerCase().endsWith("." + validFormats.get(i)))
                         {
                             isValid = true;
                             break;
+                        }
+                    }
+
+                    if (dateType != null && isValid)
+                    {
+                        if (dateType == MediaStoreUtil.DateType.Created || dateType == MediaStoreUtil.DateType.Added)
+                            isValid = true; // we can't check this!
+                        else
+                        {
+                            date = f.lastModified();
+                            isValid = date >= minDate && date <= maxDate;
                         }
                     }
 
@@ -164,41 +195,101 @@ public class DocumentUtil
         return size;
     }
 
-    public static StorageDocument createFromPath(List<String> pathParts, String mimeType, boolean createEmptyFile)
+    public static DocumentFile createDocumentFile(String path, String mimeType, Boolean isHidden, boolean createEmptyFile)
     {
-        // path can look like following:
-        // * /storage/18F2-1104/...
-        // * /18F2-1104/...
-        Integer startIndex = null;
-        if (pathParts.size() > 1 && pathParts.get(1).equals(StorageManager.get().getSDCardID()))
-            startIndex = 2;
-        else if (pathParts.size() > 2 && pathParts.get(1).equals("storage") && pathParts.get(2).equals(StorageManager.get().getSDCardID()))
-            startIndex = 3;
-        if (startIndex != null)
-                //pathParts.size() >= 3 && pathParts.get(1).equals("storage") && pathParts.get(2).equals(StorageManager.get().getSDCardID()))
+        try
         {
-            // file is on sd card
-            DocumentFolder sdCardRoot = (DocumentFolder)StorageManager.get().getSDCardRoot();
-            DocumentFile doc = sdCardRoot.getFolder().getWrapped();
-            for (int i = startIndex; i < pathParts.size(); i++)
+            List<String> pathParts = Arrays.asList(path.split("/"));
+            // path can look like following:
+            // * /storage/18F2-1104/...
+            // * /18F2-1104/...
+            // Attention: local files DON't have the SD Card ID!!!
+            Integer startIndex = null;
+            if (pathParts.size() > 1 && pathParts.get(1).equals(StorageManager.get().getSDCardID()))
+                startIndex = 2;
+            else if (pathParts.size() > 2 && pathParts.get(1).equals("storage") && pathParts.get(2).equals(StorageManager.get().getSDCardID()))
+                startIndex = 3;
+            if (startIndex != null)
+            //pathParts.size() >= 3 && pathParts.get(1).equals("storage") && pathParts.get(2).equals(StorageManager.get().getSDCardID()))
             {
-                DocumentFile nextDoc = doc.findFile(pathParts.get(i));
-                if (nextDoc != null)
-                    doc = nextDoc;
-                else if (createEmptyFile)
+                // file is on sd card
+                DocumentFolder sdCardRoot = (DocumentFolder) StorageManager.get().getSDCardRoot();
+                DocumentFile doc = sdCardRoot.getFolder().getWrapped();
+                for (int i = startIndex; i < pathParts.size(); i++)
                 {
-                    if (i == pathParts.size() - 1)
-                        doc = doc.createFile(mimeType, pathParts.get(i));
+                    DocumentFile nextDoc = doc.findFile(pathParts.get(i));
+                    if (nextDoc != null)
+                        doc = nextDoc;
+                    else if (createEmptyFile)
+                    {
+                        if (i == pathParts.size() - 1)
+                            doc = doc.createFile(mimeType, pathParts.get(i));
+                        else
+                            doc = doc.createDirectory(pathParts.get(i));
+                    }
                     else
-                        doc = doc.createDirectory(pathParts.get(i));
+                    {
+                        doc = null;
+                        break;
+                    }
                 }
-                else
-                {
-                    doc = null;
-                    break;
-                }
+                return doc;
             }
-            return doc != null ? new StorageDocument(doc, false) : null;
+            else
+            {
+                Log.d(TAG, "StartIndex for createFileFromPath not found | path=" + path);
+            }
+        }
+        catch (UnsupportedOperationException e)
+        {
+            Log.e(TAG, "Could not create a StorageDocument", e);
+        }
+        return null;
+    }
+
+    public static StorageDocument createFileFromPath(String path, String mimeType, Boolean isHidden, boolean createEmptyFile)
+    {
+        DocumentFile doc = createDocumentFile(path, mimeType, isHidden, createEmptyFile);
+        return doc != null ? new StorageDocument(doc, isHidden, false) : null;
+    }
+
+    public static StorageDocument createFolderFromPath(List<String> pathParts, Boolean isHidden, boolean createEmptyFile)
+    {
+        try
+        {
+            // path can look like following:
+            // * /storage/18F2-1104/...
+            // * /18F2-1104/...
+            Integer startIndex = null;
+            if (pathParts.size() > 1 && pathParts.get(1).equals(StorageManager.get().getSDCardID()))
+                startIndex = 2;
+            else if (pathParts.size() > 2 && pathParts.get(1).equals("storage") && pathParts.get(2).equals(StorageManager.get().getSDCardID()))
+                startIndex = 3;
+            if (startIndex != null)
+            //pathParts.size() >= 3 && pathParts.get(1).equals("storage") && pathParts.get(2).equals(StorageManager.get().getSDCardID()))
+            {
+                // file is on sd card
+                DocumentFolder sdCardRoot = (DocumentFolder) StorageManager.get().getSDCardRoot();
+                DocumentFile doc = sdCardRoot.getFolder().getWrapped();
+                for (int i = startIndex; i < pathParts.size(); i++)
+                {
+                    DocumentFile nextDoc = doc.findFile(pathParts.get(i));
+                    if (nextDoc != null)
+                        doc = nextDoc;
+                    else if (createEmptyFile)
+                        doc = doc.createDirectory(pathParts.get(i));
+                    else
+                    {
+                        doc = null;
+                        break;
+                    }
+                }
+                return doc != null ? new StorageDocument(doc, isHidden, false) : null;
+            }
+        }
+        catch (UnsupportedOperationException e)
+        {
+            Log.e(TAG, "Could not create a StorageDocument", e);
         }
         return null;
     }

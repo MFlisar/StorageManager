@@ -1,5 +1,6 @@
 package com.michaelflisar.storagemanager.interfaces;
 
+import android.content.ContentProviderResult;
 import android.location.Location;
 import android.net.Uri;
 
@@ -12,7 +13,7 @@ import java.io.OutputStream;
 /**
  * Created by flisar on 03.02.2016.
  */
-public interface IFile<T> extends IMediaStoreFile<T>
+public interface IFile<T> extends IMediaStoreFile<T>, IHideableFile<T>
 {
     boolean isFile();
     StorageDefinitions.FileType getType();
@@ -37,12 +38,13 @@ public interface IFile<T> extends IMediaStoreFile<T>
 
     // File operations
     boolean exists();
-    boolean delete(StorageDefinitions.MediaStoreUpdateType mediaStoreUpdateType, Boolean isHidden);
+    boolean delete(StorageDefinitions.MediaStoreUpdateType mediaStoreUpdateType);
     boolean renameName(String newName, StorageDefinitions.MediaStoreUpdateType mediaStoreUpdateType);
-    boolean move(IFile target, StorageDefinitions.MediaStoreUpdateType mediaStoreUpdateType, Boolean isHidden, Boolean isTargetHidden);
+    boolean move(IFile target, StorageDefinitions.MediaStoreUpdateType mediaStoreUpdateType, Boolean isTargetHidden);
     boolean copy(IFile target, StorageDefinitions.MediaStoreUpdateType mediaStoreUpdateType, Boolean isTargetHidden);
 
     // Streams
+    byte[] getBytes() throws IOException;
     InputStream getInputStream() throws IOException;
     OutputStream getOutputStream() throws IOException;
 

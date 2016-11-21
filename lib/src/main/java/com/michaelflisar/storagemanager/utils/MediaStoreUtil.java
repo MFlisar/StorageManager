@@ -1,6 +1,7 @@
 package com.michaelflisar.storagemanager.utils;
 
 import android.content.ContentProviderOperation;
+import android.content.ContentProviderResult;
 import android.content.ContentResolver;
 import android.content.ContentValues;
 import android.content.OperationApplicationException;
@@ -11,10 +12,14 @@ import android.media.MediaScannerConnection;
 import android.net.Uri;
 import android.os.RemoteException;
 import android.provider.MediaStore;
+import android.util.Log;
 
 import com.michaelflisar.storagemanager.StorageDefinitions;
 import com.michaelflisar.storagemanager.StorageManager;
+import com.michaelflisar.storagemanager.StoragePermissionManager;
 import com.michaelflisar.storagemanager.StorageUtil;
+import com.michaelflisar.storagemanager.data.DocumentFolderData;
+import com.michaelflisar.storagemanager.data.FileFolderData;
 import com.michaelflisar.storagemanager.data.MediaStoreFileData;
 import com.michaelflisar.storagemanager.data.MediaStoreFolderData;
 import com.michaelflisar.storagemanager.exceptions.StorageException;
@@ -30,6 +35,7 @@ import java.io.File;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashSet;
+import java.util.Iterator;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -42,6 +48,13 @@ public class MediaStoreUtil
     // --------------------------------
     // Definitions
     // --------------------------------
+
+    public enum DateType
+    {
+        Created,
+        Modified,
+        Added
+    }
 
     public static final String[] MEDIA_STORE_COLUMNS_IMAGE = {
             MediaStore.Images.ImageColumns._ID,
@@ -57,7 +70,7 @@ public class MediaStoreUtil
             MediaStore.Images.ImageColumns.ORIENTATION
     };
 
-    public static final String[] MEDIA_STORE_COLUMNS_VIDEO = {
+    public static final String[] MEDIA_STORE_COLUMNS_VIDEO_QUERY = {
             MediaStore.Video.VideoColumns._ID,
             MediaStore.Video.VideoColumns.DISPLAY_NAME,
             MediaStore.Video.VideoColumns.DATA,
@@ -71,7 +84,22 @@ public class MediaStoreUtil
             "0 AS " + MediaStore.Images.ImageColumns.ORIENTATION,
     };
 
+    public static final String[] MEDIA_STORE_COLUMNS_VIDEO_COLS = {
+            MediaStore.Video.VideoColumns._ID,
+            MediaStore.Video.VideoColumns.DISPLAY_NAME,
+            MediaStore.Video.VideoColumns.DATA,
+            MediaStore.Video.VideoColumns.DATE_TAKEN,
+            MediaStore.Video.VideoColumns.DATE_MODIFIED,
+            MediaStore.Video.VideoColumns.MIME_TYPE,
+            MediaStore.Video.VideoColumns.WIDTH,
+            MediaStore.Video.VideoColumns.HEIGHT,
+            MediaStore.Video.VideoColumns.LATITUDE,
+            MediaStore.Video.VideoColumns.LONGITUDE,
+            MediaStore.Images.ImageColumns.ORIENTATION,
+    };
+
     public static final String[] MEDIA_STORE_FOLDER_COLUMNS_IMAGE = new String[]{
+            MediaStore.Images.Media._ID,
             MediaStore.Images.Media.BUCKET_DISPLAY_NAME,
             MediaStore.Images.Media.BUCKET_ID,
             MediaStore.Images.Media.DATA,
@@ -83,6 +111,7 @@ public class MediaStoreUtil
     };
 
     public static final String[] MEDIA_STORE_FOLDER_COLUMNS_VIDEO = new String[]{
+            MediaStore.Video.Media._ID,
             MediaStore.Video.Media.BUCKET_DISPLAY_NAME,
             MediaStore.Video.Media.BUCKET_ID,
             MediaStore.Video.Media.DATA,
@@ -92,6 +121,14 @@ public class MediaStoreUtil
             "MIN(" + MediaStore.Video.Media.DATE_MODIFIED + ")",
             "MAX(" + MediaStore.Video.Media.DATE_MODIFIED + ")"
     };
+
+    public static final String[] MEDIA_STORE_FOLDER_COLUMNS_FILE = new String[]{
+            MediaStore.Files.FileColumns.DATA,
+            MediaStore.Files.FileColumns.PARENT,
+    };
+
+
+    private static final String FILE_TYPE_NO_MEDIA = ".nomedia";
 
     // --------------------------------
     // Functions
@@ -141,6 +178,7 @@ public class MediaStoreUtil
             int maxDateTakenColumn = projection.length - 3;
             int minDateTakenColumn = projection.length - 4;
             int countColumn = projection.length - 5;
+            int idColumn = cursor.getColumnIndex(MediaStore.Images.Media._ID);
             int bucketColumn = cursor.getColumnIndex(MediaStore.Images.Media.BUCKET_DISPLAY_NAME);
             int bucketIdColumn = cursor.getColumnIndex(MediaStore.Images.Media.BUCKET_ID);
             int dataColumn = cursor.getColumnIndex(MediaStore.Images.Media.DATA);
@@ -152,26 +190,61 @@ public class MediaStoreUtil
                 long maxDateTaken = cursor.getLong(maxDateTakenColumn);
                 long minDateTaken = cursor.getLong(minDateTakenColumn);
                 int count = cursor.getInt(countColumn);
+                long id = cursor.getLong(idColumn);
                 long bucketId = cursor.getLong(bucketIdColumn);
                 String bucket = cursor.getString(bucketColumn);
                 String data = cursor.getString(dataColumn);
 
                 // foldersSet check is necessary, because more images with the same date could exist!!! Only use 1 and don't add folders twice!!!
-                BaseFolder folder = null;
-                IFile file = StorageUtil.getFileByPath(data);
-                if (file != null) // ignore orphaned paths!
-                {
-                    File fileFolder = new File(data).getParentFile();
-                    if (!foldersSet.contains(fileFolder.getAbsolutePath()))
-                    {
-                        if (file.getType() == StorageDefinitions.FileType.File)
-                            folder = new FileFolder(fileFolder);
-                        else
-                            folder = new DocumentFolder((StorageDocument) StorageUtil.getFileByPath(fileFolder.getAbsolutePath()));
+//                BaseFolder folder = null;
+//                IFile file = StorageUtil.getFileByPath(data, false);
 
-                        folder.setMediaStoreFolderData(new MediaStoreFolderData(bucketId, bucket, count, minDateTaken, maxDateTaken, minDateModified, maxDateModified));
-                        folders.add(folder);
-                        foldersSet.add(fileFolder.getAbsolutePath());
+                // get folder path manually
+                String pathFolder = null;
+
+                if (data != null)
+                {
+                    try
+                    {
+                        pathFolder = new File(data).getParentFile().getAbsolutePath();
+                    }
+                    catch (Exception e) {}
+                }
+//                        (data.substring(0, data.lastIndexOf("/"))) : null;
+
+                if (pathFolder != null) // ignore orphaned paths! + ignore if file may be not YET createable + ignore files we don't have permissions for!
+                {
+                    if (!foldersSet.contains(pathFolder))
+                    {
+                        BaseFolder folder = null;
+                        boolean isFile = StorageUtil.isPathAFile(pathFolder);
+                        if (isFile)//file.getType() == StorageDefinitions.FileType.File)
+                        {
+                            folder = new FileFolder(new File(pathFolder));
+                            // TODO
+//                            ((FileFolder)folder).setFileFolderData(new FileFolderData(new StorageFile(data, true, false), count));
+                        }
+                        else
+                        {
+                            if (StoragePermissionManager.hasSDCardPermissions())
+                            {
+                                StorageDocument doc = new StorageDocument(null);
+                                doc.initLazyly(pathFolder, null); //ohne MediaStoreData geht nur path und name eigentlich!!
+//                                StorageDocument doc = (StorageDocument) StorageUtil.getFileByPath(pathFolder, null);
+//                                if (doc != null)
+                                    folder = new DocumentFolder(doc);
+                            }
+
+                            // TODO
+//                            ((DocumentFolder)folder).setDocumentFolderData(new DocumentFolderData());
+                        }
+
+                        if (folder != null)
+                        {
+                            folder.setMediaStoreFolderData(new MediaStoreFolderData(id, data, bucketId, bucket, count, minDateTaken, maxDateTaken, minDateModified, maxDateModified));
+                            folders.add(folder);
+                            foldersSet.add(pathFolder);
+                        }
                     }
                 }
             }
@@ -183,7 +256,188 @@ public class MediaStoreUtil
         return folders;
     }
 
-    public static List<MediaStoreFileData> loadFilesInFolder(Long folderBucketId, List<StorageDefinitions.MediaType> fileTypesToList, StorageDefinitions.FileSortingType limitSortingType, StorageDefinitions.FileSortingOrder limitSortingOrder, Integer limit)
+    public static List<IFolder> getAllHiddenFoldersWithoutContent(StorageDefinitions.MediaType mediaType)
+    {
+        ArrayList<IFolder> folders = new ArrayList<>();
+
+        String[] projection = MEDIA_STORE_FOLDER_COLUMNS_FILE;
+        Uri baseUri = MediaStore.Files.getContentUri("external");
+
+        String nonMediaCondition = MediaStore.Files.FileColumns.MEDIA_TYPE + "=" + MediaStore.Files.FileColumns.MEDIA_TYPE_NONE;
+        String where = nonMediaCondition + " AND " + MediaStore.Files.FileColumns.TITLE + " LIKE ?";
+
+        String[] params = new String[] { "%" + FILE_TYPE_NO_MEDIA + "%" };
+
+        //String groupBy = "1) GROUP BY 1,(2";
+
+        Cursor cursor = StorageManager.get().getContext().getContentResolver().query(baseUri,
+                projection, // Which columns to return
+                where,    // Which rows to return
+                params,       // Selection arguments (none)
+                null     // Ordering
+        );
+
+        if (cursor.moveToFirst())
+        {
+            Log.d(MediaStoreUtil.class.getSimpleName(), "Cursor count: " + cursor.getCount());
+            int dataColumn = cursor.getColumnIndex(MediaStore.Files.FileColumns.DATA);
+            int parentColumn = cursor.getColumnIndex(MediaStore.Files.FileColumns.PARENT);
+
+            do
+            {
+                String data = cursor.getString(dataColumn);
+                String parent = cursor.getString(parentColumn);
+                // foldersSet check is necessary, because more images with the same date could exist!!! Only use 1 and don't add folders twice!!!
+//                BaseFolder folder = null;
+//                IFile file = StorageUtil.getFileByPath(data, false);
+
+                // get folder path manually
+                String pathFolder = null;
+
+                if (data != null)
+                {
+                    try
+                    {
+                        pathFolder = new File(data).getParentFile().getAbsolutePath();
+                    }
+                    catch (Exception e) {}
+                }
+//                        (data.substring(0, data.lastIndexOf("/"))) : null;
+
+                if (pathFolder != null) // ignore orphaned paths! + ignore if file may be not YET createable + ignore files we don't have permissions for!
+                {
+                    BaseFolder folder = null;
+                    boolean isFile = StorageUtil.isPathAFile(pathFolder);
+                    if (isFile)//file.getType() == StorageDefinitions.FileType.File)
+                    {
+                        folder = new FileFolder(new File(pathFolder));
+                        // TODO
+//                            ((FileFolder)folder).setFileFolderData(new FileFolderData(new StorageFile(data, true, false), count));
+                    }
+                    else
+                    {
+                        if (StoragePermissionManager.hasSDCardPermissions())
+                        {
+                            StorageDocument doc = new StorageDocument(null);
+                            doc.initLazyly(pathFolder, null); //ohne MediaStoreData geht nur path und name eigentlich!!
+//                                StorageDocument doc = (StorageDocument) StorageUtil.getFileByPath(pathFolder, null);
+//                                if (doc != null)
+                            folder = new DocumentFolder(doc);
+                        }
+
+                        // TODO
+//                            ((DocumentFolder)folder).setDocumentFolderData(new DocumentFolderData());
+                    }
+
+                    if (folder != null)
+                    {
+                        ArrayList<String> filesInParent = getAllHiddenFilesInFileParent(parent);
+                        filterPathsByMediaType(filesInParent, mediaType);
+                        int count = filesInParent.size();
+                        if (count > 0)
+                        {
+                            if (folder instanceof FileFolder)
+                                ((FileFolder) folder).setFileFolderData(new FileFolderData(new StorageFile(data, true, false), count));
+                            else
+                                ((DocumentFolder) folder).setDocumentFolderData(new DocumentFolderData(new StorageFile(data, true, false), count));
+                            folders.add(folder);
+                        }
+                    }
+                }
+            }
+            while (cursor.moveToNext());
+        }
+
+        cursor.close();
+
+        return folders;
+    }
+
+    public static ArrayList<String> getAllHiddenFilesInFileParent(String parent)
+    {
+        String[] projection = {
+                MediaStore.Files.FileColumns.DATA,
+                MediaStore.Files.FileColumns.MEDIA_TYPE,
+                MediaStore.Files.FileColumns.PARENT,
+                MediaStore.Files.FileColumns.TITLE
+        };
+        Uri baseUri = MediaStore.Files.getContentUri("external");
+
+        String condition = MediaStore.Files.FileColumns.MEDIA_TYPE + "=" + MediaStore.Files.FileColumns.MEDIA_TYPE_NONE;
+
+        String where = condition + " AND " + MediaStore.Files.FileColumns.PARENT + "=?";
+
+        String[] params = new String[] { parent };
+
+        Cursor cursor = StorageManager.get().getContext().getContentResolver().query(baseUri,
+                projection, // Which columns to return
+                where,    // Which rows to return
+                params,       // Selection arguments (none)
+                null     // Ordering
+        );
+
+       ArrayList<String> files = new ArrayList<>();
+        if (cursor.moveToFirst())
+        {
+            do {
+                files.add(cursor.getString(0));
+            }
+            while (cursor.moveToNext());
+        }
+
+        cursor.close();
+
+        return files;
+    }
+
+    public static void filterPathsByMediaType(List<String> paths, StorageDefinitions.MediaType type)
+    {
+        switch (type)
+        {
+            case Image:
+            {
+                for (Iterator<String> it = paths.iterator(); it.hasNext();)
+                {
+                    String p = it.next();
+                    boolean accepted = false;
+                    for (final String ext : StorageDefinitions.IMG_FORMATS)
+                    {
+                        if (p.toLowerCase().endsWith("." + ext))
+                        {
+                            accepted = true;
+                            break;
+                        }
+                    }
+                    if (!accepted)
+                        it.remove();
+                }
+                break;
+            }
+            case Video:
+            {
+                for (Iterator<String> it = paths.iterator(); it.hasNext();)
+                {
+                    String p = it.next();
+                    boolean accepted = false;
+                    for (final String ext : StorageDefinitions.VID_FORMATS)
+                    {
+                        if (p.toLowerCase().endsWith("." + ext))
+                        {
+                            accepted = true;
+                            break;
+                        }
+                    }
+                    if (!accepted)
+                        it.remove();
+                }
+                break;
+            }
+            default:
+                throw new RuntimeException("Type not handled");
+        }
+    }
+
+    public static List<MediaStoreFileData> loadFilesInFolder(Long folderBucketId, List<StorageDefinitions.MediaType> fileTypesToList, StorageDefinitions.FileSortingType limitSortingType, StorageDefinitions.FileSortingOrder limitSortingOrder, Integer limit, Long minDate, Long maxDate, DateType dateType)
     {
         if (fileTypesToList == null)
         {
@@ -193,11 +447,11 @@ public class MediaStoreUtil
 
         List<MediaStoreFileData> files = new ArrayList<>();
         for (int i = 0; i < fileTypesToList.size(); i++)
-            files.addAll(doLoadFilesInFolder(folderBucketId, fileTypesToList.get(i), limitSortingType, limitSortingOrder, limit));
+            files.addAll(doLoadFilesInFolder(folderBucketId, fileTypesToList.get(i), limitSortingType, limitSortingOrder, limit, minDate, maxDate, dateType));
         return files;
     }
 
-    private static List<MediaStoreFileData> doLoadFilesInFolder(Long folderBucketId, StorageDefinitions.MediaType mediaType, StorageDefinitions.FileSortingType limitSortingType, StorageDefinitions.FileSortingOrder limitSortingOrder, Integer limit)
+    private static List<MediaStoreFileData> doLoadFilesInFolder(Long folderBucketId, StorageDefinitions.MediaType mediaType, StorageDefinitions.FileSortingType limitSortingType, StorageDefinitions.FileSortingOrder limitSortingOrder, Integer limit,  Long minDate, Long maxDate, DateType dateType)
     {
         if (limitSortingOrder == null)
             limitSortingOrder = StorageDefinitions.FileSortingOrder.Asc;
@@ -213,7 +467,7 @@ public class MediaStoreUtil
                 projection = MEDIA_STORE_COLUMNS_IMAGE;
                 break;
             case Video:
-                projection = MEDIA_STORE_COLUMNS_VIDEO;
+                projection = MEDIA_STORE_COLUMNS_VIDEO_QUERY;
                 break;
             default:
                 throw new RuntimeException("Type not handled");
@@ -249,11 +503,45 @@ public class MediaStoreUtil
         if (limit != null)
             orderBy += " LIMIT " + limit;
 
+        String selection = bucketIdCol + " LIKE ?";
+        List<String> selectionArgsList = new ArrayList<>();
+        selectionArgsList.add(String.valueOf(folderBucketId));
+        String dateCol = null;
+        if (dateType != null)
+        {
+            switch (dateType)
+            {
+                case Created:
+                    dateCol = getContentCreationDateColumn(mediaType);
+                    break;
+                case Modified:
+                    dateCol = getContentModifiedDateColumn(mediaType);
+                    break;
+                case Added:
+                    dateCol = getContentAddedDateColumn(mediaType);
+                    break;
+            }
+        }
+        if (minDate != null)
+        {
+            selection += " AND " + dateCol + ">=?";
+            if (dateType == DateType.Modified) // modified ist in seconds!
+                minDate /= 1000;
+            selectionArgsList.add(String.valueOf(minDate));
+        }
+        if (maxDate != null)
+        {
+            selection += " AND " + dateCol + "<=?";
+            if (dateType == DateType.Modified) // modified ist in seconds!
+                maxDate /= 1000;
+            selectionArgsList.add(String.valueOf(maxDate));
+        }
+
         // Make the query.
         Cursor cursor = StorageManager.get().getContext().getContentResolver().query(uri,
                 projection, // Which columns to return
-                bucketIdCol + " LIKE ?",    // Which rows to return
-                new String[] { String.valueOf(folderBucketId) },     // Which rows to return (all rows)
+                selection,    // Which rows to return
+                selectionArgsList.toArray(new String[selectionArgsList.size()]),     // Which rows to return (all rows)
                 orderBy     // Ordering
         );
 
@@ -315,7 +603,7 @@ public class MediaStoreUtil
                 projection = MEDIA_STORE_COLUMNS_IMAGE;
                 break;
             case Video:
-                projection = MEDIA_STORE_COLUMNS_VIDEO;
+                projection = MEDIA_STORE_COLUMNS_VIDEO_QUERY;
                 break;
             default:
                 throw new RuntimeException("Type not handled");
@@ -346,7 +634,7 @@ public class MediaStoreUtil
                 baseUri = getMediaStoreUri(StorageDefinitions.MediaType.Image, external);
                 break;
             case Video:
-                projection = MEDIA_STORE_COLUMNS_VIDEO;
+                projection = MEDIA_STORE_COLUMNS_VIDEO_COLS;
                 baseUri = getMediaStoreUri(StorageDefinitions.MediaType.Video, external);
                 break;
             default:
@@ -377,14 +665,19 @@ public class MediaStoreUtil
 
     public static boolean delete(Uri uri)
     {
-//        try
-//        {
+        return StorageManager.get().getContext().getContentResolver().delete(uri, null, null) == 1;
+    }
+
+    public static boolean tryDelete(Uri uri)
+    {
+        try
+        {
             return StorageManager.get().getContext().getContentResolver().delete(uri, null, null) == 1;
-//        }
-//        catch (IllegalArgumentException e)
-//        {
-//            return false;
-//        }
+        }
+        catch (IllegalArgumentException e)
+        {
+            return false;
+        }
     }
 
     public static ContentProviderOperation deleteOperation(StorageDefinitions.MediaType mediaType, String path)
@@ -398,11 +691,16 @@ public class MediaStoreUtil
 
     public static boolean delete(File file, Boolean external)
     {
+        return delete(file.getAbsoluteFile(), external);
+    }
+
+    public static boolean delete(String path, Boolean external)
+    {
         List<Uri> baseUris = new ArrayList<>();
         String dataColumn = null;
 
         boolean deleted = false;
-        String mimeType = ExtensionUtil.getMimeType(file);
+        String mimeType = ExtensionUtil.getMimeType(path);
         if (mimeType != null)
         {
             if (mimeType.contains("image"))
@@ -429,7 +727,7 @@ public class MediaStoreUtil
         }
 
         for (int i = 0; i < baseUris.size(); i++)
-            deleted |= StorageManager.get().getContext().getContentResolver().delete(baseUris.get(i), dataColumn + "=?", new String[]{file.getAbsolutePath()}) > 0;
+            deleted |= StorageManager.get().getContext().getContentResolver().delete(baseUris.get(i), dataColumn + "=?", new String[]{path}) > 0;
 
         return deleted;
     }
@@ -459,10 +757,10 @@ public class MediaStoreUtil
                 .build();
     }
 
-    public static void updateAfterCreation(IFile file, MediaStoreFileData mediaStoreFileData)
+    public static Uri updateAfterCreation(IFile file, MediaStoreFileData mediaStoreFileData)
     {
         StorageDefinitions.MediaType mediaType = ExtensionUtil.getMediaType(file.getPath());
-        addMedia(mediaType, true, file.getPath(), file.getName(), mediaStoreFileData.getDateTaken(), mediaStoreFileData.getDateModified(), mediaStoreFileData.getLatitude(), mediaStoreFileData.getLongitude(), mediaStoreFileData.getRotation());
+        return addMedia(mediaType, true, file.getPath(), file.getName(), mediaStoreFileData.getDateTaken(), mediaStoreFileData.getDateModified(), mediaStoreFileData.getLatitude(), mediaStoreFileData.getLongitude(), mediaStoreFileData.getRotation());
 //        addMedia(mediaType, true, file.getWrapped(), file.created(), file.lastModified(), file.location(), file.rotation());
     }
 
@@ -525,22 +823,42 @@ public class MediaStoreUtil
         return cr.bulkInsert(getMediaStoreUri(mediaType, external), values);
     }
 
-    public static int renameMedia(StorageDefinitions.MediaType mediaType, long id, File newFile)
+    public static boolean renameMedia(StorageDefinitions.MediaType mediaType, long id, String newFilePath, String newName)
     {
         ContentResolver resolver = StorageManager.get().getContext().getContentResolver();
-        ContentValues values = createRenameMediaContentValues(mediaType, newFile);
+        ContentValues values = createRenameMediaContentValues(mediaType, newFilePath, newName);
         Uri uri = getMediaStoreUri(mediaType, true);
         String columnId = getContentIDColumn(mediaType);
-        return resolver.update(uri, values, columnId + "=?", new String[]{String.valueOf(id)});
+        return resolver.update(uri, values, columnId + "=?", new String[]{String.valueOf(id)}) > 0;
     }
 
-    public static ContentProviderOperation renameMediaOperation(StorageDefinitions.MediaType mediaType, long id, File newFile)
+    public static int renameMedia(StorageDefinitions.MediaType mediaType, String oldFilePath, String newFilePath, String newName)
+    {
+        ContentResolver resolver = StorageManager.get().getContext().getContentResolver();
+        ContentValues values = createRenameMediaContentValues(mediaType, newFilePath, newName);
+        Uri uri = getMediaStoreUri(mediaType, true);
+        String columnData = getContentDataColumn(mediaType);
+        return StorageManager.get().getContext().getContentResolver().update(uri, values, columnData + "=?", new String[]{oldFilePath});
+    }
+
+    public static ContentProviderOperation renameMediaOperation(StorageDefinitions.MediaType mediaType, long id, String newFilePath, String newName)
     {
         String columnId = getContentIDColumn(mediaType);
         Uri uri = getMediaStoreUri(mediaType, true);
-        ContentValues values = createRenameMediaContentValues(mediaType, newFile);
+        ContentValues values = createRenameMediaContentValues(mediaType, newFilePath, newName);
         return ContentProviderOperation.newUpdate(uri)
                 .withSelection(columnId + "=?", new String[]{String.valueOf(id)})
+                .withValues(values)
+                .build();
+    }
+
+    public static ContentProviderOperation renameMediaOperation(StorageDefinitions.MediaType mediaType, String oldPath, String newPath, String newName)
+    {
+        String columnData = getContentDataColumn(mediaType);
+        Uri uri = getMediaStoreUri(mediaType, true);
+        ContentValues values = createRenameMediaContentValues(mediaType, newPath, newName);
+        return ContentProviderOperation.newUpdate(uri)
+                .withSelection(columnData + "=?", new String[]{oldPath})
                 .withValues(values)
                 .build();
     }
@@ -613,6 +931,23 @@ public class MediaStoreUtil
         return column;
     }
 
+    public static String getContentAddedDateColumn(StorageDefinitions.MediaType mediaType)
+    {
+        String column;
+        switch (mediaType)
+        {
+            case Image:
+                column = MediaStore.Images.Media.DATE_ADDED;
+                break;
+            case Video:
+                column = MediaStore.Video.Media.DATE_ADDED;
+                break;
+            default:
+                throw new RuntimeException("Type not handled");
+        }
+        return column;
+    }
+
     public static String getContentCreationDateColumn(StorageDefinitions.MediaType mediaType)
     {
         String column;
@@ -647,7 +982,7 @@ public class MediaStoreUtil
         return column;
     }
 
-    private static ContentValues createRenameMediaContentValues(StorageDefinitions.MediaType mediaType, File newFile)
+    private static ContentValues createRenameMediaContentValues(StorageDefinitions.MediaType mediaType, String newFilePath, String newName)
     {
         ContentValues values = new ContentValues(3);
         String keyTitle;
@@ -668,9 +1003,9 @@ public class MediaStoreUtil
             default:
                 throw new RuntimeException("Type not handled");
         }
-        values.put(keyTitle, newFile.getName());
-        values.put(keyDisplayName, newFile.getName());
-        values.put(keyData, newFile.getAbsolutePath());
+        values.put(keyTitle, newName);
+        values.put(keyDisplayName, newName);
+        values.put(keyData, newFilePath);
         return values;
     }
 
@@ -689,6 +1024,24 @@ public class MediaStoreUtil
                 throw new RuntimeException("Type not handled!");
         }
         return uri;
+    }
+
+    public static ContentValues deleteMediaContentValues(StorageDefinitions.MediaType mediaType, String filePath)
+    {
+        ContentValues values = new ContentValues(1);
+        switch (mediaType)
+        {
+            case Image:
+                values.put(MediaStore.Images.Media.DATA, filePath);
+                break;
+            case Video:
+                values.put(MediaStore.Video.Media.DATA, filePath);
+                break;
+            default:
+                throw new RuntimeException("Type not handled!");
+        }
+
+        return values;
     }
 
     public static ContentValues createMediaContentValues(StorageDefinitions.MediaType mediaType, String filePath, String fileName, long dateTaken, long dateModified, Double latitude, Double longitude, Integer rotation)
@@ -807,14 +1160,15 @@ public class MediaStoreUtil
         return path;
     }
 
-    public static boolean applyBatch(ArrayList<ContentProviderOperation> operations) throws StorageException
+    public static ContentProviderResult[] applyBatch(ArrayList<ContentProviderOperation> operations) throws StorageException
     {
         if (operations == null && operations.size() == 0)
-            return true;
+            return null;
 
         try
         {
-            StorageManager.get().getContext().getContentResolver().applyBatch(MediaStore.AUTHORITY, operations);
+            ContentProviderResult[] result = StorageManager.get().getContext().getContentResolver().applyBatch(MediaStore.AUTHORITY, operations);
+            return result;
         }
         catch (RemoteException e)
         {
@@ -824,8 +1178,6 @@ public class MediaStoreUtil
         {
             throw new StorageException(StorageException.Type.BatchError, e);
         }
-
-        return false;
     }
 
 }

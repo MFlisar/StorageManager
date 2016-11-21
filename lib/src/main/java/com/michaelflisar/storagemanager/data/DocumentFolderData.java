@@ -1,5 +1,6 @@
 package com.michaelflisar.storagemanager.data;
 
+import com.michaelflisar.storagemanager.interfaces.IFile;
 import com.michaelflisar.storagemanager.interfaces.IFolderData;
 
 /**
@@ -7,10 +8,12 @@ import com.michaelflisar.storagemanager.interfaces.IFolderData;
  */
 public class DocumentFolderData implements IFolderData
 {
-    private int mCount;
+    private Integer mCount;
+    private IFile mMainFile;
 
-    public DocumentFolderData(int count)
+    public DocumentFolderData(IFile file, Integer count)
     {
+        mMainFile = file;
         mCount = count;
     }
 
@@ -19,8 +22,20 @@ public class DocumentFolderData implements IFolderData
     // --------------------------------
 
     @Override
+    public boolean knowsCount()
+    {
+        return mCount != null;
+    }
+
+    @Override
     public int getCount()
     {
         return mCount;
+    }
+
+    @Override
+    public IFile getMainFile()
+    {
+        return mMainFile;
     }
 }

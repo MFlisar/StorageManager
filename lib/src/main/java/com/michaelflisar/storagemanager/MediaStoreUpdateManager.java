@@ -1,6 +1,7 @@
 package com.michaelflisar.storagemanager;
 
 import android.content.ContentProviderOperation;
+import android.content.ContentProviderResult;
 import android.location.Location;
 
 import com.michaelflisar.storagemanager.data.MediaStoreFileData;
@@ -31,9 +32,13 @@ public class MediaStoreUpdateManager
     {
     }
 
+    private ArrayList<ContentProviderOperation> mOperations = new ArrayList<>();
+
     private ArrayList<String> mFilesDeletionPaths = new ArrayList<>();
     private ArrayList<String> mFileCreationsPaths = new ArrayList<>();
     private ArrayList<MediaStoreFileData> mFileCreationsMediaStoreFileData = new ArrayList<>();
+    private ArrayList<String> mFileRenameOldPaths = new ArrayList<>();
+    private ArrayList<String> mFileRenameNewPaths = new ArrayList<>();
 
     //private ArrayList<String> mPathDocuments = new ArrayList<>();
 
@@ -55,6 +60,18 @@ public class MediaStoreUpdateManager
         mFileCreationsMediaStoreFileData.add(mediaStoreFileData);
     }
 
+    public void addRename(IFile fileOld, IFile fileNew)
+    {
+        mFileRenameOldPaths.add(fileOld.getPath());
+        mFileRenameNewPaths.add(fileNew.getPath());
+    }
+
+    public void addRename(String oldPath, String newPath)
+    {
+        mFileRenameOldPaths.add(oldPath);
+        mFileRenameNewPaths.add(newPath);
+    }
+
     public void addDeletion(IFile file)
     {
         if (file.getType() == StorageDefinitions.FileType.File)
@@ -68,11 +85,16 @@ public class MediaStoreUpdateManager
         mFilesDeletionPaths.add(path);
     }
 
+    public void addOperation(ContentProviderOperation operation)
+    {
+        mOperations.add(operation);
+    }
+
     // -------------------------------
     // executing operations
     // -------------------------------
 
-    public void execute() throws StorageException
+    public ContentProviderResult[] execute() throws StorageException
     {
         ArrayList<ContentProviderOperation> operations = new ArrayList<>();
 
@@ -97,18 +119,39 @@ public class MediaStoreUpdateManager
                     mFileCreationsMediaStoreFileData.get(i).getRotation()));
         }
 
-        // 3) execute direct operations as batch
-        if (operations.size() > 0)
-            MediaStoreUtil.applyBatch(operations);
+        // 3) create all file rename operations
+        for (int i = 0; i < mFileRenameNewPaths.size(); i++)
+        {
+            String pathOld = mFileRenameOldPaths.get(i);
+            String pathNew = mFileRenameNewPaths.get(i);
+            String nameNew = new File(pathNew).getName();
+            StorageDefinitions.MediaType mediaType = ExtensionUtil.getMediaType(pathOld);
+            operations.add(MediaStoreUtil.renameMediaOperation(mediaType, pathOld, pathNew, nameNew));
+        }
 
-        // 4) reset
+        // 4) add all custom operations
+        for (int i = 0; i < mOperations.size(); i++)
+            operations.add(mOperations.get(i));
+
+        // 5) execute direct operations as batch
+        ContentProviderResult[] result = null;
+        if (operations.size() > 0)
+            result = MediaStoreUtil.applyBatch(operations);
+
+        // 5) reset
         reset();
+
+        return result;
     }
 
     public void reset()
     {
+        mOperations.clear();
+
         mFilesDeletionPaths.clear();
         mFileCreationsPaths.clear();
         mFileCreationsMediaStoreFileData.clear();
+        mFileRenameOldPaths.clear();
+        mFileRenameNewPaths.clear();
     }
 }

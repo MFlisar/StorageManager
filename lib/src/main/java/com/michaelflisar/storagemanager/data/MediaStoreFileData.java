@@ -26,9 +26,9 @@ public class MediaStoreFileData
     private int mHeight;
     private Double mLatitude;
     private Double mLongitude;
-    private int mOrientation;
+    private int mRotation;
 
-    public MediaStoreFileData(StorageDefinitions.MediaType type, Uri uri, long id, String name, String data, long dateTaken, long dateModified, String mimeType, int width, int height, Double latitude, Double longitude, int orientation)
+    public MediaStoreFileData(StorageDefinitions.MediaType type, Uri uri, long id, String name, String data, long dateTaken, long dateModified, String mimeType, int width, int height, Double latitude, Double longitude, int rotation)
     {
         mType = type;
         mUri = uri;
@@ -42,7 +42,7 @@ public class MediaStoreFileData
         mHeight = height;
         mLatitude = latitude;
         mLongitude = longitude;
-        mOrientation = orientation;
+        mRotation = rotation;
     }
 
     public MediaStoreFileData(MediaStoreFileData source)
@@ -59,7 +59,12 @@ public class MediaStoreFileData
         mHeight = source.mHeight;
         mLatitude = source.mLatitude;
         mLongitude = source.mLongitude;
-        mOrientation = source.mOrientation;
+        mRotation = source.mRotation;
+    }
+
+    public MediaStoreFileData copy()
+    {
+        return new MediaStoreFileData(this);
     }
 
     // --------------------------------
@@ -128,12 +133,12 @@ public class MediaStoreFileData
 
     public int getOrientation()
     {
-        return mOrientation;
+        return ExifFileUtil.convertNormalisedDegreesToExif(mRotation);
     }
 
     public int getRotation()
     {
-        return ExifFileUtil.convertExifOrientationToDegrees(mOrientation);
+        return mRotation;
     }
 
     public Location getLocation()
@@ -151,9 +156,20 @@ public class MediaStoreFileData
     // Setter (Updater)
     // --------------------------------
 
+    public void updateUri(Uri uri)
+    {
+        mUri = uri;
+        mId = Long.valueOf(uri.getLastPathSegment());
+    }
+
     public void updateRotation(int degrees)
     {
-        mOrientation = ExifFileUtil.convertNormalisedDegreesToExif(degrees);
+        mRotation = degrees;
+    }
+
+    public void updateOrientation(int orientation)
+    {
+        mRotation = ExifFileUtil.convertExifOrientationToDegrees(orientation);
     }
 
     public void updateName(String path, String name)

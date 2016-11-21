@@ -2,6 +2,7 @@ package com.michaelflisar.storagemanager.utils;
 
 import android.location.Location;
 import android.media.ExifInterface;
+import android.util.Log;
 
 import com.michaelflisar.storagemanager.interfaces.IFile;
 
@@ -58,6 +59,17 @@ public class ExifFileUtil {
         return sFormatter;
     }
 
+    public static boolean copyExifCatchException(String oldPath, String newPath)
+    {
+        try
+        {
+            return copyExifAndroid(oldPath, newPath);
+        }
+        catch (IOException e)
+        {
+            return false;
+        }
+    }
 
     public static boolean copyExif(String oldPath, String newPath) throws IOException
     {
@@ -101,6 +113,23 @@ public class ExifFileUtil {
         return map;
     }
 
+    public static byte[] getExifThumbnail(String path)
+    {
+        ExifInterface exif;
+        try
+        {
+            exif = new ExifInterface(path);
+        }
+        catch (IOException e)
+        {
+            return null;
+        }
+        byte[] imageData = exif.getThumbnail();
+        if (imageData != null)
+            return imageData;
+        return null;
+    }
+
     // --------------------------------
     // Functions for retrieving single values
     // --------------------------------
@@ -121,7 +150,7 @@ public class ExifFileUtil {
         return lastModified != null ? lastModified : 0;
     }
 
-    public static Integer getRotation(Map<String, String> exifValues)
+    public static Integer getOrientation(Map<String, String> exifValues, boolean convertToDegrees)
     {
         if (exifValues == null)
             return null;
@@ -130,7 +159,9 @@ public class ExifFileUtil {
         {
             String orientationAsString = exifValues.get(ExifInterface.TAG_ORIENTATION);
             Integer orientation = orientationAsString != null ? Integer.parseInt(orientationAsString) : null;
-            return orientation == null ? null : convertExifOrientationToDegrees(orientation);
+            if (!convertToDegrees)
+                return orientation == null ? ExifFileUtil.convertNormalisedDegreesToExif(null) : orientation;
+            return ExifFileUtil.convertExifOrientationToDegrees(orientation);
         }
         catch (Exception e) {}
 
@@ -181,18 +212,28 @@ public class ExifFileUtil {
 
         Float latitude = 0f, longitude = 0f;
 
-        if((sLatitude !=null) && (sLatitudeRef !=null) && (sLongitude != null) && (sLongitudeRef !=null))
+        if (sLatitude != null && sLatitudeRef != null && sLongitude != null && sLongitudeRef != null)
         {
-            if(sLatitudeRef.equals("N"))
-                latitude = convertToDegree(sLatitude);
-            else
-                latitude = 0 - convertToDegree(sLatitude);
+            sLatitudeRef = sLatitudeRef.toUpperCase();
+            sLongitudeRef = sLongitudeRef.toUpperCase();
 
-            if(sLongitudeRef.equals("E"))
+            if (sLatitudeRef.equals("S") || sLatitudeRef.equals("N"))
+            {
+                latitude = convertToDegree(sLatitude);
+                if (sLatitudeRef.equals("S"))
+                    latitude = 0 - latitude;
+            }
+
+            if (sLongitude.equals("E") || sLongitude.equals("N"))
+            {
                 longitude = convertToDegree(sLongitude);
-            else
-                longitude = 0 - convertToDegree(sLongitude);
+                if (sLongitude.equals("W"))
+                    longitude = 0 - longitude;
+            }
         }
+
+        if (latitude == null || longitude == null)
+            return null;
 
         if (latitude == 0.0 && longitude == 0.0)
             return null;
@@ -209,27 +250,34 @@ public class ExifFileUtil {
 
     public static Float convertToDegree(String stringDMS)
     {
-        Float result = null;
-        String[] DMS = stringDMS.split(",", 3);
+        try
+        {
+            Float result = null;
+            String[] DMS = stringDMS.split(",", 3);
 
-        String[] stringD = DMS[0].split("/", 2);
-        Double D0 = new Double(stringD[0]);
-        Double D1 = new Double(stringD[1]);
-        Double FloatD = D0/D1;
+            String[] stringD = DMS[0].split("/", 2);
+            Double D0 = new Double(stringD[0]);
+            Double D1 = new Double(stringD[1]);
+            Double FloatD = D0 / D1;
 
-        String[] stringM = DMS[1].split("/", 2);
-        Double M0 = new Double(stringM[0]);
-        Double M1 = new Double(stringM[1]);
-        Double FloatM = M0/M1;
+            String[] stringM = DMS[1].split("/", 2);
+            Double M0 = new Double(stringM[0]);
+            Double M1 = new Double(stringM[1]);
+            Double FloatM = M0 / M1;
 
-        String[] stringS = DMS[2].split("/", 2);
-        Double S0 = new Double(stringS[0]);
-        Double S1 = new Double(stringS[1]);
-        Double FloatS = S0/S1;
+            String[] stringS = DMS[2].split("/", 2);
+            Double S0 = new Double(stringS[0]);
+            Double S1 = new Double(stringS[1]);
+            Double FloatS = S0 / S1;
 
-        result = new Float(FloatD + (FloatM/60) + (FloatS/3600));
+            result = new Float(FloatD + (FloatM / 60) + (FloatS / 3600));
 
-        return result;
+            return result;
+        }
+        catch (NumberFormatException e)
+        {
+            return null;
+        }
     }
 
     public static int normaliseRotation(int rotation)
@@ -257,13 +305,17 @@ public class ExifFileUtil {
             return 180;
         else if (orientation == ExifInterface.ORIENTATION_ROTATE_270)
             return 270;
-        return ExifInterface.ORIENTATION_UNDEFINED;
+        return 0;
     }
 
-    public static int convertNormalisedDegreesToExif(int degrees)
+    public static int convertNormalisedDegreesToExif(Integer degrees)
     {
         int rot = ExifInterface.ORIENTATION_UNDEFINED;
-        if (degrees == 0)
+        if (degrees == null)
+        {
+
+        }
+        else if (degrees == 0)
             rot = ExifInterface.ORIENTATION_NORMAL;
         else if (degrees == 90)
             rot = ExifInterface.ORIENTATION_ROTATE_90;

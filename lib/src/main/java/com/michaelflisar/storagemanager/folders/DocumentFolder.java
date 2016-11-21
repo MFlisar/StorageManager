@@ -36,7 +36,7 @@ public class DocumentFolder extends BaseFolder<DocumentFile>
     public DocumentFolder(Uri treeUri)
     {
         // this folder is not read/writeable! but if I use fromTreeUri, it does not work here!
-        super(new StorageDocument(DocumentFile.fromSingleUri(StorageManager.get().getContext(), treeUri), null));
+        super(new StorageDocument(DocumentFile.fromSingleUri(StorageManager.get().getContext(), treeUri), null, null));
         documentFolderData = null;
         status = StorageDefinitions.FolderStatus.NotLoaded;
         files = new ArrayList<>();
@@ -44,30 +44,35 @@ public class DocumentFolder extends BaseFolder<DocumentFile>
 
     public void updateDocument(DocumentFile doc)
     {
-        folder = new StorageDocument(doc, null);
+        folder = new StorageDocument(doc, null, null);
     }
 
     @Override
-    public List<IFile<DocumentFile>> loadFilesInternally(boolean loadFromMediaStore, StorageDefinitions.FileSortingType limitSortingType, StorageDefinitions.FileSortingOrder limitSortingOrder, Integer limit)
+    public List<IFile<DocumentFile>> loadFilesInternally(boolean loadFromMediaStore, StorageDefinitions.FileSortingType limitSortingType, StorageDefinitions.FileSortingOrder limitSortingOrder, Integer limit, Long minDate, Long maxDate, MediaStoreUtil.DateType dateType)
     {
-        List<IFile<DocumentFile>> files = new ArrayList<>();
+//        List<IFile<DocumentFile>> files = new ArrayList<>();
 
+        boolean isHidden = StorageUtil.hasNoMediaFile(getFolder().getParent(), true);
         if (loadFromMediaStore)
         {
-            List<MediaStoreFileData> folderFiles = MediaStoreUtil.loadFilesInFolder(mediaStoreFolderData.getBucketId(), fileTypesToList, limitSortingType, limitSortingOrder, limit);
+            List<MediaStoreFileData> folderFiles = MediaStoreUtil.loadFilesInFolder(mediaStoreFolderData.getBucketId(), fileTypesToList, limitSortingType, limitSortingOrder, limit, minDate, maxDate, dateType);
             for (int i = 0; i < folderFiles.size(); i++)
             {
-                StorageDocument file = (StorageDocument)StorageUtil.getFileByPath(folderFiles.get(i).getData());
-                file.setMediaStoreFileData(folderFiles.get(i));
+//                StorageDocument file = (StorageDocument)StorageUtil.getFileByPath(folderFiles.get(i).getData(), isHidden);
+//                file.setMediaStoreFileData(folderFiles.get(i));
+                // lazy creation!
+                StorageDocument file = new StorageDocument(isHidden);
+                file.initLazyly(folderFiles.get(i).getData(), folderFiles.get(i));
                 files.add(file);
             }
         }
         else
         {
             // TODO: use sorting and order? then you would have to load all files even if limit is set!
-            List<DocumentFile> folderFiles = DocumentUtil.getFolderFiles(folder.getWrapped(), fileTypesToList, limit);
+            // TODO: minCreationDate not yet supported!
+            List<DocumentFile> folderFiles = DocumentUtil.getFolderFiles(folder.getWrapped(), fileTypesToList, limit, minDate, maxDate, dateType);
             for (int i = 0; i < folderFiles.size(); i++)
-                files.add(new StorageDocument(folderFiles.get(i), null)); // MediaStoreData is set to null, not using media store does only make sense when loading data in a hidden folder!
+                files.add(new StorageDocument(folderFiles.get(i), isHidden, null)); // MediaStoreData is set to null, not using media store does only make sense when loading data in a hidden folder!
         }
 
         return files;
@@ -95,7 +100,7 @@ public class DocumentFolder extends BaseFolder<DocumentFile>
         if (status == StorageDefinitions.FolderStatus.Loaded)
             return files.size();
 
-        if (documentFolderData != null)
+        if (documentFolderData != null && documentFolderData.knowsCount())
             return documentFolderData.getCount();
 
         if (mediaStoreFolderData != null)

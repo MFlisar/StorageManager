@@ -18,7 +18,7 @@ public class StorageException extends Exception {
 
     public StorageException(Type type, Exception e)
     {
-        super(getMessage(type), e);
+        super(getMessage(type) + " | e=" + (e != null ? e.getMessage() : "NULL"), e);
     }
 
     private static String getMessage(Type type)

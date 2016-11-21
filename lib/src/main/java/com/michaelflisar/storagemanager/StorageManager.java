@@ -2,6 +2,7 @@ package com.michaelflisar.storagemanager;
 
 import android.content.Context;
 import android.location.Location;
+import android.net.Uri;
 import android.support.v4.provider.DocumentFile;
 import android.util.Log;
 
@@ -23,7 +24,7 @@ import java.util.Map;
  */
 public class StorageManager
 {
-    private static final String TAG = StorageManager.class.getName();
+    public static final String TAG = StorageManager.class.getName();
 
     private static StorageManager INSTANCE = null;
 
@@ -51,6 +52,7 @@ public class StorageManager
     private Context mContext;
     private FileFolder mRoot = null;
     private IFolder mSDCardRoot = null;
+    private Uri mSDCardUri = null;
     private String mSDCardID = null;
     private int mTimeToWaitToRecheckMediaScanner;
 
@@ -71,12 +73,11 @@ public class StorageManager
                 Log.d(TAG, "SD Card root: " + ((FileFolder) mSDCardRoot).getFolder().getPath());
             else if (mSDCardRoot instanceof DocumentFolder)
             {
+                mSDCardUri = ((DocumentFolder) mSDCardRoot).getFolder().getUri();
                 Log.d(TAG, "SD Card root: " + ((DocumentFolder) mSDCardRoot).getFolder().getUri().toString() + " | " + ((DocumentFolder) mSDCardRoot).getFolder().getWrapped().canRead() + " | " + ((DocumentFolder) mSDCardRoot).getFolder().getWrapped().canWrite());
 
                 // Example String: content://com.android.externalstorage.documents/tree/0FEC-3001%3A
-                String[] parts = ((DocumentFolder) mSDCardRoot).getFolder().getUri().toString().split("/");
-                if (parts.length >= 5)
-                    mSDCardID = parts[4].replace(StorageDefinitions.AUTHORITY_COLON, "");
+                extractSDCardIDFromSDRoot();
             }
         }
     }
@@ -130,6 +131,15 @@ public class StorageManager
         };
     }
 
+    private void extractSDCardIDFromSDRoot()
+    {
+        String[] parts = ((DocumentFolder) mSDCardRoot).getFolder().getUri().toString().split("/");
+        if (parts.length >= 5)
+            mSDCardID = parts[4].replace(StorageDefinitions.AUTHORITY_COLON, "");
+        else
+            mSDCardID = null;
+    }
+
     public void setCopyHandler(ICopyHandler copyHandler)
     {
         mCopyHandler = copyHandler;
@@ -168,6 +178,13 @@ public class StorageManager
         checkInitialised();
         return mSDCardID;
     }
+
+    public Uri getSDCardUri()
+    {
+        checkInitialised();
+        return mSDCardUri;
+    }
+
     public Context getContext()
     {
         checkInitialised();
@@ -236,5 +253,23 @@ public class StorageManager
     public interface IMetaDataHandler
     {
         HashMap<String, String> getExifInformations(IFile file);
+    }
+
+    public void resetSDCard()
+    {
+        checkInitialised();
+        mSDCardRoot = null;
+        mSDCardUri = null;
+    }
+
+    public void updateSDCard(Uri treeUri, DocumentFile doc)
+    {
+        checkInitialised();
+        if (mSDCardRoot == null)
+//            mSDCardRoot = StorageFolderUtil.getSDCardRootFolder(mRoot);
+            mSDCardRoot = new DocumentFolder(new StorageDocument(doc, null, null));
+        else
+            ((DocumentFolder)mSDCardRoot).updateDocument(doc);
+        mSDCardUri = treeUri;
     }
 }

@@ -1,31 +1,16 @@
 package com.michaelflisar.storagemanager;
 
-import android.content.Context;
-import android.database.Cursor;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Environment;
-import android.provider.MediaStore;
-import android.support.v4.provider.DocumentFile;
+import android.util.Log;
 
-import com.michaelflisar.storagemanager.data.MediaStoreFolderData;
-import com.michaelflisar.storagemanager.files.StorageDocument;
-import com.michaelflisar.storagemanager.folders.BaseFolder;
 import com.michaelflisar.storagemanager.folders.DocumentFolder;
 import com.michaelflisar.storagemanager.folders.FileFolder;
-import com.michaelflisar.storagemanager.interfaces.IFile;
 import com.michaelflisar.storagemanager.interfaces.IFolder;
-import com.michaelflisar.storagemanager.utils.DocumentUtil;
 import com.michaelflisar.storagemanager.utils.ExternalStorageHelperPriorAndroidM;
-import com.michaelflisar.storagemanager.utils.FileUtil;
-import com.michaelflisar.storagemanager.utils.MediaStoreUtil;
 
 import java.io.File;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.List;
 import java.util.Map;
 
 /**
@@ -46,7 +31,7 @@ public class StorageFolderUtil
 
     public static IFolder getSDCardRootFolder(FileFolder mainRoot)
     {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M)
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.LOLLIPOP)
         {
             Map<String, File> externalLocations = ExternalStorageHelperPriorAndroidM.getAllStorageLocations();
             File sdCard = externalLocations.get(ExternalStorageHelperPriorAndroidM.EXTERNAL_SD_CARD);
@@ -64,17 +49,23 @@ public class StorageFolderUtil
             File[] fs = StorageManager.get().getContext().getExternalFilesDirs(null);
             if (fs != null && fs.length == 2)
             {
-                String mainPath = fs[0].getAbsolutePath();
-                String subPath = mainPath.replace(mainRoot.getFolder().getPath(), "");
-                String pathSDCard = fs[1].getAbsolutePath().replace(subPath, "");
-                String sdCardIdNoColon = pathSDCard.replace("/storage/", "");
+                if (fs[0] != null && fs[1] != null)
+                {
+                    String mainPath = fs[0].getAbsolutePath();
+                    String subPath = mainPath.replace(mainRoot.getFolder().getPath(), "");
+                    String pathSDCard = fs[1].getAbsolutePath().replace(subPath, "");
+                    String sdCardIdNoColon = pathSDCard.replace("/storage/", "");
 
-                // TODO: check if this is the root directory!!!
+                    // TODO: check if this is the root directory!!!
+                    Uri treeUri = Uri.withAppendedPath(Uri.parse(StorageDefinitions.AUTHORITY_TREE), sdCardIdNoColon + StorageDefinitions.AUTHORITY_COLON);
+                    DocumentFolder f = new DocumentFolder(treeUri);
 
-                Uri treeUri = Uri.withAppendedPath(Uri.parse(StorageDefinitions.AUTHORITY), sdCardIdNoColon + StorageDefinitions.AUTHORITY_COLON);
-                DocumentFolder f = new DocumentFolder(treeUri);
-
-                return f;
+                    return f;
+                }
+                else
+                {
+                    Log.d(StorageManager.TAG, "fs[0]=" + (fs[0] == null ? "NULL" : fs[0]) + ", fs[1]=" + (fs[1] == null ? "NULL" : fs[1]));
+                }
             }
         }
         return null;

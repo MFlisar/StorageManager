@@ -17,7 +17,8 @@ import java.io.OutputStream;
 public interface IMediaStoreFile<T>
 {
     MediaStoreFileData getMediaStoreFileData(boolean loadIfMissing);
-    MediaStoreFileData getCopyOrCreateBestPossibleMediaStoreFileData();
+    MediaStoreFileData getCopyOrCreateBestPossibleMediaStoreFileData(StorageDefinitions.MediaStoreUpdateType mediaStoreUpdateType);
+    Boolean getHiddenState(StorageDefinitions.MediaStoreUpdateType mediaStoreUpdateType);
     void setMediaStoreFileData(MediaStoreFileData data);
     void resetMediaStoreData();
 }

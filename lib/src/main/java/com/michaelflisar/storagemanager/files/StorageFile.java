@@ -1,9 +1,8 @@
 package com.michaelflisar.storagemanager.files;
 
-import android.content.Context;
+import android.content.ContentProviderResult;
 import android.location.Location;
 import android.net.Uri;
-import android.provider.MediaStore;
 
 import com.michaelflisar.storagemanager.MediaStoreUpdateManager;
 import com.michaelflisar.storagemanager.StorageDefinitions;
@@ -13,8 +12,6 @@ import com.michaelflisar.storagemanager.data.MediaStoreFileData;
 import com.michaelflisar.storagemanager.interfaces.IMediaStoreFile;
 import com.michaelflisar.storagemanager.utils.ExifFileUtil;
 import com.michaelflisar.storagemanager.utils.ExtensionUtil;
-import com.michaelflisar.storagemanager.utils.FileUtil;
-import com.michaelflisar.storagemanager.utils.InternalStorageUtil;
 import com.michaelflisar.storagemanager.utils.MediaStoreUtil;
 import com.michaelflisar.storagemanager.interfaces.IFile;
 
@@ -24,34 +21,37 @@ import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.io.Serializable;
 import java.util.HashMap;
 
 /**
  * Created by flisar on 03.02.2016.
  */
-public class StorageFile extends BaseMediaStoreFile<File> implements IFile<File>, IMediaStoreFile<File>
+public class StorageFile extends BaseFile<File> implements Serializable, IFile<File>, IMediaStoreFile<File>
 {
     // File
     protected File file;
 
-    public StorageFile(String path, boolean loadMediaStoreData)
+    public StorageFile(String path, Boolean isHidden, boolean loadMediaStoreData)
     {
-       this(new File(path), loadMediaStoreData);
+       this(new File(path), isHidden, loadMediaStoreData);
     }
 
-    public StorageFile(File file, boolean loadMediaStoreData)
+    public StorageFile(File file, Boolean isHidden, boolean loadMediaStoreData)
     {
+        super(isHidden);
         this.file = file;
         getMediaStoreFileData(loadMediaStoreData);
     }
 
-    public StorageFile(String path, MediaStoreFileData mediaStoreFileData)
+    public StorageFile(String path, Boolean isHidden, MediaStoreFileData mediaStoreFileData)
     {
-        this(new File(path), mediaStoreFileData);
+        this(new File(path), isHidden, mediaStoreFileData);
     }
 
-    public StorageFile(File file, MediaStoreFileData mediaStoreFileData)
+    public StorageFile(File file, Boolean isHidden, MediaStoreFileData mediaStoreFileData)
     {
+        super(isHidden);
         this.file = file;
         setMediaStoreFileData(mediaStoreFileData);
     }
@@ -74,7 +74,7 @@ public class StorageFile extends BaseMediaStoreFile<File> implements IFile<File>
         File parent = file.getParentFile();
         if (parent == null)
             return null;
-        return new StorageFile(parent, null);
+        return new StorageFile(parent, null, null);
     }
 
     // --------------------------------
@@ -137,6 +137,9 @@ public class StorageFile extends BaseMediaStoreFile<File> implements IFile<File>
     @Override
     public Uri getUri()
     {
+        MediaStoreFileData mediaStoreFileData = getMediaStoreFileData(false);
+        if (mediaStoreFileData != null)
+            return mediaStoreFileData.getUri();
         return Uri.fromFile(file);
     }
 
@@ -147,9 +150,7 @@ public class StorageFile extends BaseMediaStoreFile<File> implements IFile<File>
         if (mediaStoreFileData != null)
             return mediaStoreFileData.getDateTaken();
 
-        // TODO: cache this value and reset it when editing file via a clear function to clear internal values?
-        HashMap<String, String> exifInformations = StorageManager.get().getMetaDataHandler().getExifInformations(this);
-        return ExifFileUtil.getDate(lastModified(), exifInformations);
+        return ExifFileUtil.getDate(lastModified(), getExifData(true));
     }
 
     @Override
@@ -179,9 +180,7 @@ public class StorageFile extends BaseMediaStoreFile<File> implements IFile<File>
         if (mediaStoreFileData != null)
             return mediaStoreFileData.getLocation();
 
-        // TODO: cache this value and reset it when editing file via a clear function to clear internal values?
-        HashMap<String, String> exifInformations = StorageManager.get().getMetaDataHandler().getExifInformations(this);
-        return ExifFileUtil.getLocation(exifInformations);
+        return ExifFileUtil.getLocation(getExifData(true));
     }
 
     @Override
@@ -191,9 +190,7 @@ public class StorageFile extends BaseMediaStoreFile<File> implements IFile<File>
         if (mediaStoreFileData != null)
             return mediaStoreFileData.getRotation();
 
-        // TODO: cache this value and reset it when editing file via a clear function to clear internal values?
-        HashMap<String, String> exifInformations = StorageManager.get().getMetaDataHandler().getExifInformations(this);
-        return ExifFileUtil.getRotation(exifInformations);
+        return ExifFileUtil.getOrientation(getExifData(true), true);
     }
 
     // --------------------------------
@@ -207,46 +204,49 @@ public class StorageFile extends BaseMediaStoreFile<File> implements IFile<File>
     }
 
     @Override
-    public boolean delete(StorageDefinitions.MediaStoreUpdateType mediaStoreUpdateType, Boolean isHidden)
+    public boolean delete(StorageDefinitions.MediaStoreUpdateType mediaStoreUpdateType)
     {
-        boolean success = false;
+        boolean deleted = false;
 
-        if (isHidden == null && mediaStoreUpdateType != StorageDefinitions.MediaStoreUpdateType.None)
-            isHidden = StorageUtil.hasNoMediaFile(getParent(), true);
+        // 1) prepare
+        // get hidden state (if necessary)
+        Boolean hiddenState = getHiddenState(mediaStoreUpdateType);
 
+        // 2) delete file and update (or schedule) media store update
         switch (mediaStoreUpdateType)
         {
             case None:
             case Schedule:
-                success = file.delete();
-                if (mediaStoreUpdateType == StorageDefinitions.MediaStoreUpdateType.Schedule && !isHidden)
+                deleted = file.delete();
+                if (mediaStoreUpdateType == StorageDefinitions.MediaStoreUpdateType.Schedule && !hiddenState)
                     MediaStoreUpdateManager.get().addDeletion(file.getAbsolutePath());
                 break;
             case Immediately:
                 // 1) try to delete via media store if file is not hidden => this will delete the file from the storage as well
-                if (!isHidden)
+                if (!hiddenState)
                 {
                     MediaStoreFileData mediaStoreFileData = getMediaStoreFileData(false);
                     if (mediaStoreFileData != null)
-                        success = MediaStoreUtil.delete(mediaStoreFileData.getUri());
+                        deleted = MediaStoreUtil.delete(mediaStoreFileData.getUri());
                     else
-                        success = MediaStoreUtil.delete(file, true);
+                        deleted = MediaStoreUtil.delete(file, true);
                 }
                 // 2) Fallback if deletion via media store did not work (as it may not be indexed (yet)... or may not exist anymore => then this function will fail as well)
-                if (!success)
-                    success = file.delete();
+                if (!deleted)
+                    deleted = file.delete();
                 break;
         }
 
-        return success;
+        return deleted;
     }
 
     @Override
     public boolean renameName(String newName, StorageDefinitions.MediaStoreUpdateType mediaStoreUpdateType)
     {
-        // 1) remember old file and old media store data
+        // 1) prepare
+        // get hidden state (if necessary) and remember old file and old media store data
         File oldFile = file;
-        MediaStoreFileData mediaStoreFileData = mediaStoreUpdateType != StorageDefinitions.MediaStoreUpdateType.None ? getCopyOrCreateBestPossibleMediaStoreFileData() : null;
+        Boolean hiddenState = getHiddenState(mediaStoreUpdateType);
 
         // 2) rename file
         File newFile = new File(file.getParentFile().getAbsolutePath(), newName);
@@ -257,38 +257,38 @@ public class StorageFile extends BaseMediaStoreFile<File> implements IFile<File>
             file = newFile;
 
         // 4) update media store
-        if (renamed)
+        if (renamed && hiddenState != null && !hiddenState)
         {
-            file = newFile;
             switch (mediaStoreUpdateType)
             {
                 case None:
                     break;
                 case Immediately:
-                    // TODO: could be optimised both could be called in 1 transaction!
-                    if (mediaStoreFileData != null)
-                        MediaStoreUtil.delete(mediaStoreFileData.getUri());
+                    if (getMediaStoreFileData(false) != null)
+                        MediaStoreUtil.renameMedia(getMediaType(), getMediaStoreFileData(false).getId(), newFile.getAbsolutePath(), newFile.getName());
                     else
-                        MediaStoreUtil.delete(file, true);
-                    MediaStoreUtil.updateAfterCreation(this, mediaStoreFileData);
+                        MediaStoreUtil.renameMedia(getMediaType(), oldFile.getAbsolutePath(), newFile.getAbsolutePath(), newFile.getName());
+                    if (getMediaStoreFileData(false) != null)
+                        getMediaStoreFileData(false).updateName(newFile.getPath(), newFile.getName());
                     break;
                 case Schedule:
-                    MediaStoreUpdateManager.get().addDeletion(oldFile.getAbsolutePath());
-                    MediaStoreUpdateManager.get().addCreation(this, mediaStoreFileData);
+                    MediaStoreUpdateManager.get().addRename(oldFile.getAbsolutePath(), newFile.getAbsolutePath());
+                    if (getMediaStoreFileData(false) != null)
+                        getMediaStoreFileData(false).updateName(newFile.getPath(), newFile.getName());
                     break;
             }
         }
+
         return renamed;
     }
 
     @Override
-    public boolean move(IFile target, StorageDefinitions.MediaStoreUpdateType mediaStoreUpdateType, Boolean isHidden, Boolean isTargetHidden)
+    public boolean move(IFile target, StorageDefinitions.MediaStoreUpdateType mediaStoreUpdateType, Boolean isTargetHidden)
     {
         // 1) remember old file and old media store data
         File oldFile = file;
-        MediaStoreFileData mediaStoreFileData = mediaStoreUpdateType != StorageDefinitions.MediaStoreUpdateType.None ? getCopyOrCreateBestPossibleMediaStoreFileData() : null;
-        if (isHidden == null && mediaStoreUpdateType != StorageDefinitions.MediaStoreUpdateType.None)
-            isHidden = StorageUtil.hasNoMediaFile(getParent(), true);
+        MediaStoreFileData mediaStoreFileData = getCopyOrCreateBestPossibleMediaStoreFileData(mediaStoreUpdateType);
+        Boolean hiddenState = getHiddenState(null);
 
         // 2) move file
         boolean moved = StorageManager.get().getMoveHandler().move(this, target);
@@ -297,7 +297,7 @@ public class StorageFile extends BaseMediaStoreFile<File> implements IFile<File>
         if (moved && isTargetHidden == null && mediaStoreUpdateType != StorageDefinitions.MediaStoreUpdateType.None)
             isTargetHidden = StorageUtil.hasNoMediaFile(target.getParent(), true);
 
-        // 4) update media store
+        // 4) update media store of TARGET FIle
         if (moved)
         {
             switch (mediaStoreUpdateType)
@@ -305,34 +305,43 @@ public class StorageFile extends BaseMediaStoreFile<File> implements IFile<File>
                 case None:
                     break;
                 case Immediately:
-                    // TODO: could be optimised both could be called in 1 transaction!
-                    if (!isHidden)
-                        MediaStoreUtil.updateAfterDeletion(oldFile);
-                    if (!isTargetHidden)
+                    if (!hiddenState && isTargetHidden)
+                        MediaStoreUtil.delete(oldFile, true);
+                    else if (hiddenState && !isTargetHidden)
                         MediaStoreUtil.updateAfterCreation(target, mediaStoreFileData);
+                    else if (!hiddenState && !isTargetHidden)
+                        MediaStoreUtil.renameMedia(getMediaType(), oldFile.getAbsolutePath(), target.getPath(), target.getName());
+                    // no need to update this IFile media store data as the moved file is stored in the target and this file becomes invalid
                     break;
                 case Schedule:
-                    if (!isHidden)
+                    if (!hiddenState && isTargetHidden)
                         MediaStoreUpdateManager.get().addDeletion(oldFile.getAbsolutePath());
-                    if (!isTargetHidden)
-                        MediaStoreUpdateManager.get().addCreation(target, mediaStoreFileData);
+                    else if (hiddenState && !isTargetHidden)
+                        MediaStoreUpdateManager.get().addCreation(target.getPath(), mediaStoreFileData);
+                    else if (!hiddenState && !isTargetHidden)
+                        MediaStoreUpdateManager.get().addRename(oldFile.getAbsolutePath(), target.getPath());
+                    // no need to update this IFile media store data as the moved file is stored in the target and this file becomes invalid
                     break;
             }
         }
+
         return moved;
     }
 
     @Override
     public boolean copy(IFile target, StorageDefinitions.MediaStoreUpdateType mediaStoreUpdateType, Boolean isTargetHidden)
     {
-        // 1) copy file
+        // 1) remember old media store data
+        MediaStoreFileData mediaStoreFileData = getCopyOrCreateBestPossibleMediaStoreFileData(mediaStoreUpdateType);
+
+        // 2) copy file
         boolean copied = StorageManager.get().getCopyHandler().copy(this, target);
 
-        // 2) get hidden state if necessary
+        // 3) get hidden state if necessary
         if (copied && isTargetHidden == null && mediaStoreUpdateType != StorageDefinitions.MediaStoreUpdateType.None)
             isTargetHidden = StorageUtil.hasNoMediaFile(target.getParent(), true);
 
-        // 3) update media store
+        // 4) update media store
         if (copied)
         {
             switch (mediaStoreUpdateType)
@@ -341,14 +350,15 @@ public class StorageFile extends BaseMediaStoreFile<File> implements IFile<File>
                     break;
                 case Immediately:
                     if (!isTargetHidden)
-                        MediaStoreUtil.updateAfterCreation(target, getCopyOrCreateBestPossibleMediaStoreFileData());
+                        MediaStoreUtil.updateAfterCreation(target, mediaStoreFileData);
                     break;
                 case Schedule:
                     if (!isTargetHidden)
-                        MediaStoreUpdateManager.get().addCreation(target, getCopyOrCreateBestPossibleMediaStoreFileData());
+                        MediaStoreUpdateManager.get().addCreation(target, mediaStoreFileData);
                     break;
             }
         }
+
         return copied;
     }
 

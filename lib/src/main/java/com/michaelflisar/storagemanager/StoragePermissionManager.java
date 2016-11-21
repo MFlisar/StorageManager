@@ -2,6 +2,7 @@ package com.michaelflisar.storagemanager;
 
 import android.annotation.TargetApi;
 import android.app.Activity;
+import android.content.Context;
 import android.content.Intent;
 import android.content.UriPermission;
 import android.net.Uri;
@@ -10,6 +11,7 @@ import android.provider.DocumentsContract;
 import android.support.v4.provider.DocumentFile;
 import android.util.Log;
 
+import com.michaelflisar.storagemanager.files.StorageDocument;
 import com.michaelflisar.storagemanager.folders.DocumentFolder;
 import com.michaelflisar.storagemanager.interfaces.IFile;
 import com.michaelflisar.storagemanager.interfaces.IFolder;
@@ -23,19 +25,21 @@ public class StoragePermissionManager
 {
     private static final String TAG = StoragePermissionManager.class.getName();
 
-    public static boolean hasPermissions()
+    public static boolean hasSDCardPermissions()
     {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M)
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.LOLLIPOP)
             return true;
+        if (StorageManager.get().getSDCardRoot() == null)
+            return false;
         return ((DocumentFolder)StorageManager.get().getSDCardRoot()).getFolder().getWrapped().canRead() &&  ((DocumentFolder)StorageManager.get().getSDCardRoot()).getFolder().getWrapped().canWrite();
     }
 
     public static boolean hasPermissionsToEdit(List<IFile> files)
     {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M)
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.LOLLIPOP)
             return true;
 
-        boolean hasPermissions = hasPermissions();
+        Boolean hasPermissions = hasSDCardPermissions();
         if (hasPermissions)
             return true;
 
@@ -49,8 +53,8 @@ public class StoragePermissionManager
 
     public static boolean needsToGetPermissionsForSDCardIfNecessary(IFolder sdCardRoot)
     {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && sdCardRoot != null)
-            return true;
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP && sdCardRoot != null)
+            return sdCardRoot.getFolder().getUri().equals(StorageManager.get().getSDCardUri()); // default is treeUri, afterwards it will be exchanged with the document uri based on the tree!
         return false;
     }
 
@@ -76,20 +80,25 @@ public class StoragePermissionManager
 
                 activity.grantUriPermission(activity.getPackageName(), treeUri, Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_WRITE_URI_PERMISSION);
 
-                // Persist access permissions.
-                if (manager.takePersistableUri())
-                    updatePersistUriPermissions(activity, treeUri);
-
                 DocumentFile doc = DocumentFile.fromTreeUri(activity, treeUri);
                 Log.d(TAG, "SD Card Root AFTER asking user: " + treeUri.toString() + " | " + doc.canRead() + " | " + doc.canWrite());
 
-                if (manager.updateSDCardDocument())
+                if (manager.isSelectionOk(doc))
                 {
-                    DocumentFolder sdCardRoot = (DocumentFolder)StorageManager.get().getSDCardRoot();
-                    sdCardRoot.updateDocument(doc);
-                }
+                    // Persist access permissions.
+                    if (manager.takePersistableUri())
+                        updatePersistUriPermissions(activity, treeUri);
 
-                manager.onUriSelected(treeUri);
+                    if (manager.updateSDCardDocument())
+                    {
+                        StorageManager.get().updateSDCard(treeUri, doc);
+//                        DocumentFolder sdCardRoot = (DocumentFolder) StorageManager.get().getSDCardRoot();
+//                        if (sdCardRoot != null)
+//                            sdCardRoot.updateDocument(doc);
+                    }
+
+                    manager.onAcceptableUriSelected(treeUri);
+                }
             }
             return true;
         }
@@ -97,10 +106,10 @@ public class StoragePermissionManager
     }
 
     @TargetApi(Build.VERSION_CODES.LOLLIPOP)
-    public static boolean checkPersistUriPermissionsAndUpdate(Activity activity, DocumentFolder documentFolder)
+    public static boolean checkPersistUriPermissionsAndUpdate(Context context, DocumentFolder documentFolder)
     {
         Uri uri = documentFolder.getFolder().getUri();
-        List<UriPermission> permissions = activity.getContentResolver().getPersistedUriPermissions();
+        List<UriPermission> permissions = context.getContentResolver().getPersistedUriPermissions();
         for (UriPermission permission : permissions)
         {
             String permissionTreeId = DocumentsContract.getTreeDocumentId(permission.getUri());
@@ -108,13 +117,34 @@ public class StoragePermissionManager
             if (uriTreeId.startsWith(permissionTreeId))
             {
                 // update permissions - after a restart this is necessary...
-                updatePersistUriPermissions(activity, uri);
-                documentFolder.updateDocument(DocumentFile.fromTreeUri(activity, permission.getUri()));
+                updatePersistUriPermissions(context, uri);
+                documentFolder.updateDocument(DocumentFile.fromTreeUri(context, permission.getUri()));
                 return true;
             }
         }
         return false;
     }
+
+    @TargetApi(Build.VERSION_CODES.LOLLIPOP)
+    public static boolean checkPersistUriPermissionsAndUpdate(Context context, StorageDocument storageDocument)
+    {
+        Uri uri = storageDocument.getUri();
+        List<UriPermission> permissions = context.getContentResolver().getPersistedUriPermissions();
+        for (UriPermission permission : permissions)
+        {
+            String permissionTreeId = DocumentsContract.getTreeDocumentId(permission.getUri());
+            String uriTreeId = DocumentsContract.getTreeDocumentId(uri);
+            if (uriTreeId.startsWith(permissionTreeId))
+            {
+                // update permissions - after a restart this is necessary...
+                updatePersistUriPermissions(context, uri);
+                storageDocument.setWrapped(DocumentFile.fromTreeUri(context, permission.getUri()));
+                return true;
+            }
+        }
+        return false;
+    }
+
 
     @TargetApi(Build.VERSION_CODES.KITKAT)
     public static boolean releasePersistUriPermissions(Activity activity, Uri uri)
@@ -133,19 +163,19 @@ public class StoragePermissionManager
     }
 
     @TargetApi(Build.VERSION_CODES.KITKAT)
-    private static void updatePersistUriPermissions(Activity activity, Uri uri)
+    private static void updatePersistUriPermissions(Context context, Uri uri)
     {
 //        int takeFlags = flags;
 //        takeFlags &= (Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_WRITE_URI_PERMISSION);
-        activity.getContentResolver().takePersistableUriPermission(uri,  Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_WRITE_URI_PERMISSION);
-
-        activity.grantUriPermission(activity.getPackageName(), uri, Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_WRITE_URI_PERMISSION);
+        context.getContentResolver().takePersistableUriPermission(uri,  Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_WRITE_URI_PERMISSION);
+        context.grantUriPermission(context.getPackageName(), uri, Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_WRITE_URI_PERMISSION);
     }
 
     public interface IStorageSelectionManager
     {
         boolean takePersistableUri();
         boolean updateSDCardDocument();
-        void onUriSelected(Uri uri);
+        boolean isSelectionOk(DocumentFile selectedFile);
+        void onAcceptableUriSelected(Uri uri);
     }
 }

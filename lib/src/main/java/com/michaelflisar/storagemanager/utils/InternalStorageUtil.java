@@ -82,7 +82,7 @@ public class InternalStorageUtil
         else
         {
             success = StorageManager.get().getCopyHandler().copy(src, tgt);
-            success &= src.delete(StorageDefinitions.MediaStoreUpdateType.None, null);
+            success &= src.delete(StorageDefinitions.MediaStoreUpdateType.None);
         }
         return success;
     }

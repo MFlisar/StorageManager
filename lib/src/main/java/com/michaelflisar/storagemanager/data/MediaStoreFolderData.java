@@ -1,10 +1,16 @@
 package com.michaelflisar.storagemanager.data;
 
+import java.io.Serializable;
+
 /**
  * Created by flisar on 03.02.2016.
  */
-public class MediaStoreFolderData
+public class MediaStoreFolderData implements Serializable
 {
+    private static final long serialVersionUID = -1599409546385227417L;
+
+    private long mId;
+    private String mMainData;
     private long mBucketId;
     private String mBucket;
     private int mCount;
@@ -13,8 +19,10 @@ public class MediaStoreFolderData
     private long mMinDateModified;
     private long mMaxDateModified;
 
-    public MediaStoreFolderData(long bucketId, String bucket, int count, long minDateTaken, long maxDateTaken, long minDateModified, long maxDateModified)
+    public MediaStoreFolderData(long id, String mainData, long bucketId, String bucket, int count, long minDateTaken, long maxDateTaken, long minDateModified, long maxDateModified)
     {
+        mId = id;
+        mMainData = mainData;
         mBucketId = bucketId;
         mBucket = bucket;
         mCount = count;
@@ -27,6 +35,16 @@ public class MediaStoreFolderData
     // --------------------------------
     // Getter
     // --------------------------------
+
+    public String getMainData()
+    {
+        return mMainData;
+    }
+
+    public long getId()
+    {
+        return mId;
+    }
 
     public long getBucketId()
     {
